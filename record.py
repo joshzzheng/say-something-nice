@@ -5,9 +5,15 @@ from struct import pack
 import pyaudio
 import wave
 import json
+import os
+import requests, json, urllib, urllib2, base64
 from os.path import join, dirname
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
-import requests, json, urllib, urllib2, base64
+from dotenv import load_dotenv
+
+
+dotenv_path = join(dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 THRESHOLD = 500
 CHUNK_SIZE = 1024
@@ -119,8 +125,9 @@ def record_to_file(path):
     wf.close()
 
 def transcribe_audio(path):
-    username = 'acf29ae7-5b6a-4367-bbe0-5895c0d0a8c8'
-    password = 'RlQSMDEOxCro'
+
+    username = os.environ.get("BLUEMIX_USERNAME")
+    password = os.environ.get("BLUEMIX_PASSWORD")
     speech_to_text = SpeechToText(username=username,
                                   password=password)
 
@@ -169,9 +176,8 @@ def get_text_sentiment(apikey, text):
 
 
 if __name__ == '__main__':
-    alchemy_api_key = '9008d02118568b0852264fbf13c8a3d66705c47c'
-    
-    print("Please say something nice to me into the microphone")
+    alchemy_api_key = os.environ.get("ALCHEMY_API_KEY")
+    print("Please say something nice into the microphone")
     record_to_file('speech.wav')
     print
     print "Transcribing audio..."
