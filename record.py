@@ -1,13 +1,14 @@
 from sys import byteorder
 from array import array
 from struct import pack
+from os.path import join, dirname
 
 import pyaudio
 import wave
-import json
-from os.path import join, dirname
-from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 import requests, json, urllib, urllib2, base64
+
+from watson_developer_cloud import SpeechToTextV1 as SpeechToText
+
 
 THRESHOLD = 500
 CHUNK_SIZE = 1024
@@ -87,7 +88,6 @@ def record():
         r.extend(snd_data)
 
         silent = is_silent(snd_data)
-
         if silent and snd_started:
             num_silent += 1
         elif not silent and not snd_started:
@@ -123,8 +123,6 @@ def transcribe_audio(path):
     password = 'RlQSMDEOxCro'
     speech_to_text = SpeechToText(username=username,
                                   password=password)
-
-    #print(json.dumps(speech_to_text.models(), indent=2))
 
     with open(join(dirname(__file__), path), 'rb') as audio_file:
         return speech_to_text.recognize(audio_file,
