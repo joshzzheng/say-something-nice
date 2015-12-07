@@ -1,16 +1,16 @@
-from sys import byteorder
-from array import array
-from struct import pack
-
+import os
 import pyaudio
 import wave
 import json
-import os
-import requests, json, urllib, urllib2, base64
-from os.path import join, dirname
-from watson_developer_cloud import SpeechToTextV1 as SpeechToText
-from dotenv import load_dotenv
 
+from sys import byteorder
+from array import array
+from struct import pack
+from os.path import join, dirname
+
+from dotenv import load_dotenv
+from watson_developer_cloud import SpeechToTextV1 as SpeechToText
+from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 
 dotenv_path = join(dirname(__file__), '.env')
 load_dotenv(dotenv_path)
@@ -93,7 +93,6 @@ def record():
         r.extend(snd_data)
 
         silent = is_silent(snd_data)
-
         if silent and snd_started:
             num_silent += 1
         elif not silent and not snd_started:
@@ -131,15 +130,16 @@ def transcribe_audio(path):
     speech_to_text = SpeechToText(username=username,
                                   password=password)
 
-    #print(json.dumps(speech_to_text.models(), indent=2))
-
+    '''
     with open(join(dirname(__file__), path), 'rb') as audio_file:
         return speech_to_text.recognize(audio_file,
             content_type='audio/wav')
+    '''
+    return "it's nice to meet you Watson"
 
 
 def get_text_sentiment(apikey, text):
-
+    '''
     # Base AlchemyAPI URL for targeted sentiment call
     alchemy_url = "http://access.alchemyapi.com/calls/text/TextGetTextSentiment"
     
@@ -166,12 +166,15 @@ def get_text_sentiment(apikey, text):
         print "HTTP Status:", results.status_code, results.reason
         print "--"
         return
+    '''
+    print(json.dumps(alchemy_language.language(url=url), indent=2))
 
+    '''
     sentiment = response['docSentiment']['type']
     score = 0.
     if sentiment in ('positive', 'negative'):
         score = float(response['docSentiment']['score'])
-    
+    '''
     return sentiment, score
 
 
@@ -187,7 +190,8 @@ if __name__ == '__main__':
     print "Text: " + text
     print
     print "How do I feel about this?"
-    sentiment, score = get_text_sentiment(alchemy_api_key, text)
-    print sentiment, score
+    #sentiment, score = get_text_sentiment(alchemy_api_key, text)
+    #print sentiment, score
+    print(json.dumps(alchemy_language.language(text=text), indent=2))
 
 
