@@ -9,7 +9,7 @@ class Recorder:
     def __init__(self, audio_file_path):
         self.audio_file_path = audio_file_path
         self.threshold = 500
-        self.chunk_size = 1024
+        self.chunk_size = 1024/2
         self.format = pyaudio.paInt16
         self.rate = 44100
         self.maximum = 16384
@@ -92,7 +92,7 @@ class Recorder:
             elif not silent and not snd_started:
                 snd_started = True
 
-            if snd_started and num_silent > 80:
+            if snd_started and num_silent > 130:
                 break
 
         sample_width = p.get_sample_size(self.format)

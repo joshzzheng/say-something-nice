@@ -22,7 +22,8 @@ def get_text_sentiment(text):
     
     alchemy_language = AlchemyLanguage(api_key=alchemy_api_key)
     result = alchemy_language.sentiment(text=text)
-    
+    if result['docSentiment']['type'] == 'neutral':
+        return 'netural', 0
     return result['docSentiment']['type'], result['docSentiment']['score']
 
 if __name__ == '__main__':
@@ -34,10 +35,11 @@ if __name__ == '__main__':
     print("Please say something nice into the microphone\n")
     recorder.record_to_file()
 
-    print("Transcribing audio.\n\n")
+    print("Transcribing audio....\n")
     result = transcribe_audio('speech.wav')
+    
     text = result['results'][0]['alternatives'][0]['transcript']
-
     print("Text: " + text + "\n")
+    
     sentiment, score = get_text_sentiment(text)
     print(sentiment, score)
