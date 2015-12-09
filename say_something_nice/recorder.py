@@ -9,7 +9,7 @@ class Recorder:
     def __init__(self, audio_file_path):
         self.audio_file_path = audio_file_path
         self.threshold = 500
-        self.chunk_size = 1024/2
+        self.chunk_size = 1024
         self.format = pyaudio.paInt16
         self.rate = 44100
         self.maximum = 16384
@@ -53,9 +53,9 @@ class Recorder:
 
     def add_silence(self, snd_data, seconds):
         "Add silence to the start and end of 'snd_data' of length 'seconds' (float)"
-        r = array('h', [0 for i in xrange(int(seconds*self.rate))])
+        r = array('h', [0 for i in range(int(seconds*self.rate))])
         r.extend(snd_data)
-        r.extend([0 for i in xrange(int(seconds*self.rate))])
+        r.extend([0 for i in range(int(seconds*self.rate))])
         return r
 
     def record(self):
