@@ -14,8 +14,9 @@ class Recorder:
         
         self.THRESHOLD = 500
         self.CHUNK_SIZE = 1024
-        self.FORMAT = pyaudio.paInt16
-        self.RATE = 44100
+        self.FORMAT = pyaudio.paInt24
+        self.RATE = 48000
+        self.MAXIMUM = 16384
 
     def is_silent(self, snd_data):
         "Returns 'True' if below the 'silent' threshold"
@@ -23,8 +24,7 @@ class Recorder:
 
     def normalize(self, snd_data):
         "Average the volume out"
-        MAXIMUM = 16384
-        times = float(MAXIMUM)/max(abs(i) for i in snd_data)
+        times = float(self.MAXIMUM)/max(abs(i) for i in snd_data)
 
         r = array('h')
         for i in snd_data:
@@ -103,9 +103,9 @@ class Recorder:
         stream.close()
         p.terminate()
 
-        r = normalize(r)
-        r = trim(r)
-        r = add_silence(r, 0.5)
+        r = self.normalize(r)
+        r = self.trim(r)
+        r = self.add_silence(r, 0.5)
         return sample_width, r
 
     def record_to_file(self):
