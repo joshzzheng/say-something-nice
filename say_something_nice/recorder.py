@@ -1,30 +1,26 @@
-import os
 import pyaudio
 import wave
-import json
 
 from sys import byteorder
 from array import array
 from struct import pack
-from os.path import join, dirname
 
 class Recorder:
     def __init__(self, audio_file_path):
         self.audio_file_path = audio_file_path
-        
-        self.THRESHOLD = 500
-        self.CHUNK_SIZE = 1024
-        self.FORMAT = pyaudio.paInt24
-        self.RATE = 48000
-        self.MAXIMUM = 16384
+        self.threshold = 500
+        self.chunk_size = 1024
+        self.format = pyaudio.paInt16
+        self.rate = 44100
+        self.maximum = 16384
 
     def is_silent(self, snd_data):
         "Returns 'True' if below the 'silent' threshold"
-        return max(snd_data) < self.THRESHOLD
+        return max(snd_data) < self.threshold
 
     def normalize(self, snd_data):
         "Average the volume out"
-        times = float(self.MAXIMUM)/max(abs(i) for i in snd_data)
+        times = float(self.maximum)/max(abs(i) for i in snd_data)
 
         r = array('h')
         for i in snd_data:
@@ -38,7 +34,7 @@ class Recorder:
             r = array('h')
 
             for i in snd_data:
-                if not snd_started and abs(i)>self.THRESHOLD:
+                if not snd_started and abs(i)>self.threshold:
                     snd_started = True
                     r.append(i)
 
@@ -57,9 +53,9 @@ class Recorder:
 
     def add_silence(self, snd_data, seconds):
         "Add silence to the start and end of 'snd_data' of length 'seconds' (float)"
-        r = array('h', [0 for i in xrange(int(seconds*self.RATE))])
+        r = array('h', [0 for i in xrange(int(seconds*self.rate))])
         r.extend(snd_data)
-        r.extend([0 for i in xrange(int(seconds*self.RATE))])
+        r.extend([0 for i in xrange(int(seconds*self.rate))])
         return r
 
     def record(self):
@@ -73,9 +69,9 @@ class Recorder:
         it without getting chopped off.
         """
         p = pyaudio.PyAudio()
-        stream = p.open(format=self.FORMAT, channels=1, rate=self.RATE,
+        stream = p.open(format=self.format, channels=1, rate=self.rate,
             input=True, output=True,
-            frames_per_buffer=self.CHUNK_SIZE)
+            frames_per_buffer=self.chunk_size)
 
         num_silent = 0
         snd_started = False
@@ -84,12 +80,13 @@ class Recorder:
 
         while 1:
             # little endian, signed short
-            snd_data = array('h', stream.read(self.CHUNK_SIZE))
+            snd_data = array('h', stream.read(self.chunk_size))
             if byteorder == 'big':
                 snd_data.byteswap()
             r.extend(snd_data)
 
             silent = self.is_silent(snd_data)
+
             if silent and snd_started:
                 num_silent += 1
             elif not silent and not snd_started:
@@ -98,7 +95,7 @@ class Recorder:
             if snd_started and num_silent > 80:
                 break
 
-        sample_width = p.get_sample_size(self.FORMAT)
+        sample_width = p.get_sample_size(self.format)
         stream.stop_stream()
         stream.close()
         p.terminate()
@@ -109,13 +106,13 @@ class Recorder:
         return sample_width, r
 
     def record_to_file(self):
-        "Records from the microphone and outputs the resulting data to 'path'"
+        "Records from the microphone and outputs the resulting data to 'self.audio_file_path'"
         sample_width, data = self.record()
         data = pack('<' + ('h'*len(data)), *data)
 
         wf = wave.open(self.audio_file_path, 'wb')
         wf.setnchannels(1)
         wf.setsampwidth(sample_width)
-        wf.setframerate(self.RATE)
+        wf.setframerate(self.rate)
         wf.writeframes(data)
         wf.close()

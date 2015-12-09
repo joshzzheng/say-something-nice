@@ -1,7 +1,6 @@
 import os
 import json
 from os.path import join, dirname
-
 from dotenv import load_dotenv
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
@@ -9,7 +8,6 @@ from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 from say_something_nice.recorder import Recorder
 
 def transcribe_audio(path_to_audio_file):
-
     username = os.environ.get("BLUEMIX_USERNAME")
     password = os.environ.get("BLUEMIX_PASSWORD")
     speech_to_text = SpeechToText(username=username,
@@ -37,11 +35,9 @@ if __name__ == '__main__':
     recorder.record_to_file()
 
     print("Transcribing audio.\n\n")
-    
     result = transcribe_audio('speech.wav')
     text = result['results'][0]['alternatives'][0]['transcript']
 
     print("Text: " + text + "\n")
     sentiment, score = get_text_sentiment(text)
     print(sentiment, score)
-
