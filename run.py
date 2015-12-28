@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 
+import time
+import serial
+
 from say_something_nice.recorder import Recorder
 
 def transcribe_audio(path_to_audio_file):
@@ -32,6 +35,16 @@ if __name__ == '__main__':
 
     recorder = Recorder("speech.wav")
 
+    # configure the serial connections (the parameters differs on the device you are connecting to)
+    ser = serial.Serial(
+        port='/dev/tty.usbmodem1411',
+        baudrate=9600,
+        parity=serial.PARITY_ODD,
+        stopbits=serial.STOPBITS_TWO,
+        bytesize=serial.SEVENBITS
+    )
+    ser.isOpen()
+
     print("Please say something nice into the microphone\n")
     recorder.record_to_file()
 
@@ -43,3 +56,11 @@ if __name__ == '__main__':
     
     sentiment, score = get_text_sentiment(text)
     print(sentiment, score)
+
+    if float(score) > 0.6:
+        ser.write('p')
+    else:
+        ser.write('n')
+
+    ser.close()
+
