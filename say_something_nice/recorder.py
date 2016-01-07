@@ -92,7 +92,7 @@ class Recorder:
             elif not silent and not snd_started:
                 snd_started = True
 
-            if snd_started and num_silent > 130:
+            if snd_started and num_silent > 80:
                 break
 
         sample_width = p.get_sample_size(self.format)
