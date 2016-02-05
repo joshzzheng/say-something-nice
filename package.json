@@ -23,6 +23,7 @@
   },
   "homepage": "https://github.com/boxcarton/say-something-nice#readme",
   "dependencies": {
-    "basscss": "^7.1.1"
+    "basscss": "^7.1.1",
+    "watson-speech": "^0.6.0"
   }
 }
