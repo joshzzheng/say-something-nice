@@ -1,13 +1,162 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.WatsonSpeech = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+// IBM Watson Speech JavaScript SDK
+// Copyright IBM (Apache-2.0)
+
 'use strict';
 
+/**
+ * @namespace WatsonSpeech
+ */
+
+/**
+ * Version - for public releases, this should have the version number, e.g 'v1.0.0'
+ */
+exports.version = "v0.9.0";
+
+/**
+ * SpeechToText
+ * @type {*|exports|module.exports}
+ */
 exports.SpeechToText = require('./speech-to-text');
 
-// todo: add a text-to-speech library next
+exports.TextToSpeech = require('./text-to-speech');
 
-},{"./speech-to-text":41}],2:[function(require,module,exports){
+},{"./speech-to-text":49,"./text-to-speech":59}],2:[function(require,module,exports){
+;(function (exports) {
+  'use strict'
+
+  var i
+  var code = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  var lookup = []
+  for (i = 0; i < code.length; i++) {
+    lookup[i] = code[i]
+  }
+  var revLookup = []
+
+  for (i = 0; i < code.length; ++i) {
+    revLookup[code.charCodeAt(i)] = i
+  }
+  revLookup['-'.charCodeAt(0)] = 62
+  revLookup['_'.charCodeAt(0)] = 63
+
+  var Arr = (typeof Uint8Array !== 'undefined')
+    ? Uint8Array
+    : Array
+
+  function decode (elt) {
+    var v = revLookup[elt.charCodeAt(0)]
+    return v !== undefined ? v : -1
+  }
+
+  function b64ToByteArray (b64) {
+    var i, j, l, tmp, placeHolders, arr
+
+    if (b64.length % 4 > 0) {
+      throw new Error('Invalid string. Length must be a multiple of 4')
+    }
+
+    // the number of equal signs (place holders)
+    // if there are two placeholders, than the two characters before it
+    // represent one byte
+    // if there is only one, then the three characters before it represent 2 bytes
+    // this is just a cheap hack to not do indexOf twice
+    var len = b64.length
+    placeHolders = b64.charAt(len - 2) === '=' ? 2 : b64.charAt(len - 1) === '=' ? 1 : 0
+
+    // base64 is 4/3 + up to two characters of the original data
+    arr = new Arr(b64.length * 3 / 4 - placeHolders)
+
+    // if there are placeholders, only get up to the last complete 4 chars
+    l = placeHolders > 0 ? b64.length - 4 : b64.length
+
+    var L = 0
+
+    function push (v) {
+      arr[L++] = v
+    }
+
+    for (i = 0, j = 0; i < l; i += 4, j += 3) {
+      tmp = (decode(b64.charAt(i)) << 18) | (decode(b64.charAt(i + 1)) << 12) | (decode(b64.charAt(i + 2)) << 6) | decode(b64.charAt(i + 3))
+      push((tmp & 0xFF0000) >> 16)
+      push((tmp & 0xFF00) >> 8)
+      push(tmp & 0xFF)
+    }
+
+    if (placeHolders === 2) {
+      tmp = (decode(b64.charAt(i)) << 2) | (decode(b64.charAt(i + 1)) >> 4)
+      push(tmp & 0xFF)
+    } else if (placeHolders === 1) {
+      tmp = (decode(b64.charAt(i)) << 10) | (decode(b64.charAt(i + 1)) << 4) | (decode(b64.charAt(i + 2)) >> 2)
+      push((tmp >> 8) & 0xFF)
+      push(tmp & 0xFF)
+    }
+
+    return arr
+  }
+
+  function encode (num) {
+    return lookup[num]
+  }
+
+  function tripletToBase64 (num) {
+    return encode(num >> 18 & 0x3F) + encode(num >> 12 & 0x3F) + encode(num >> 6 & 0x3F) + encode(num & 0x3F)
+  }
+
+  function encodeChunk (uint8, start, end) {
+    var temp
+    var output = []
+    for (var i = start; i < end; i += 3) {
+      temp = (uint8[i] << 16) + (uint8[i + 1] << 8) + (uint8[i + 2])
+      output.push(tripletToBase64(temp))
+    }
+    return output.join('')
+  }
+
+  function uint8ToBase64 (uint8) {
+    var i
+    var extraBytes = uint8.length % 3 // if we have 1 byte left, pad 2 bytes
+    var output = ''
+    var parts = []
+    var temp, length
+    var maxChunkLength = 16383 // must be multiple of 3
+
+    // go through the array every three bytes, we'll deal with trailing stuff later
+
+    for (i = 0, length = uint8.length - extraBytes; i < length; i += maxChunkLength) {
+      parts.push(encodeChunk(uint8, i, (i + maxChunkLength) > length ? length : (i + maxChunkLength)))
+    }
+
+    // pad the end with zeros, but make sure to not forget the extra bytes
+    switch (extraBytes) {
+      case 1:
+        temp = uint8[uint8.length - 1]
+        output += encode(temp >> 2)
+        output += encode((temp << 4) & 0x3F)
+        output += '=='
+        break
+      case 2:
+        temp = (uint8[uint8.length - 2] << 8) + (uint8[uint8.length - 1])
+        output += encode(temp >> 10)
+        output += encode((temp >> 4) & 0x3F)
+        output += encode((temp << 2) & 0x3F)
+        output += '='
+        break
+      default:
+        break
+    }
+
+    parts.push(output)
+
+    return parts.join('')
+  }
+
+  exports.toByteArray = b64ToByteArray
+  exports.fromByteArray = uint8ToBase64
+}(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
 },{}],3:[function(require,module,exports){
+
+},{}],4:[function(require,module,exports){
 (function (global){
 /*!
  * The buffer module from node.js, for the browser.
@@ -77,16 +226,13 @@ function kMaxLength () {
 }
 
 /**
- * Class: Buffer
- * =============
+ * The Buffer constructor returns instances of `Uint8Array` that have their
+ * prototype changed to `Buffer.prototype`. Furthermore, `Buffer` is a subclass of
+ * `Uint8Array`, so the returned instances will have all the node `Buffer` methods
+ * and the `Uint8Array` methods. Square bracket notation works as expected -- it
+ * returns a single octet.
  *
- * The Buffer constructor returns instances of `Uint8Array` that are augmented
- * with function properties for all the node `Buffer` API functions. We use
- * `Uint8Array` so that square bracket notation works as expected -- it returns
- * a single octet.
- *
- * By augmenting the instances, we can avoid modifying the `Uint8Array`
- * prototype.
+ * The `Uint8Array` prototype remains unmodified.
  */
 function Buffer (arg) {
   if (!(this instanceof Buffer)) {
@@ -112,6 +258,12 @@ function Buffer (arg) {
 
   // Unusual.
   return fromObject(this, arg)
+}
+
+// TODO: Legacy, not needed anymore. Remove in next major version.
+Buffer._augment = function (arr) {
+  arr.__proto__ = Buffer.prototype
+  return arr
 }
 
 function fromNumber (that, length) {
@@ -231,6 +383,14 @@ function fromJsonObject (that, object) {
 if (Buffer.TYPED_ARRAY_SUPPORT) {
   Buffer.prototype.__proto__ = Uint8Array.prototype
   Buffer.__proto__ = Uint8Array
+  if (typeof Symbol !== 'undefined' && Symbol.species &&
+      Buffer[Symbol.species] === Buffer) {
+    // Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97
+    Object.defineProperty(Buffer, Symbol.species, {
+      value: null,
+      configurable: true
+    })
+  }
 } else {
   // pre-set for values that may exist in the future
   Buffer.prototype.length = undefined
@@ -427,8 +587,8 @@ function slowToString (encoding, start, end) {
   }
 }
 
-// Even though this property is private, it shouldn't be removed because it is
-// used by `is-buffer` to detect buffer instances in Safari 5-7.
+// The property is used by `Buffer.isBuffer` and `is-buffer` (in Safari 5-7) to detect
+// Buffer instances.
 Buffer.prototype._isBuffer = true
 
 Buffer.prototype.toString = function toString () {
@@ -1201,7 +1361,6 @@ Buffer.prototype.writeInt32BE = function writeInt32BE (value, offset, noAssert) 
 }
 
 function checkIEEE754 (buf, value, offset, ext, max, min) {
-  if (value > max || value < min) throw new RangeError('value is out of bounds')
   if (offset + ext > buf.length) throw new RangeError('index out of range')
   if (offset < 0) throw new RangeError('index out of range')
 }
@@ -1463,220 +1622,303 @@ function blitBuffer (src, dst, offset, length) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":4,"ieee754":5,"isarray":6}],4:[function(require,module,exports){
-;(function (exports) {
-  'use strict'
-
-  var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-
-  var Arr = (typeof Uint8Array !== 'undefined')
-    ? Uint8Array
-    : Array
-
-  var PLUS = '+'.charCodeAt(0)
-  var SLASH = '/'.charCodeAt(0)
-  var NUMBER = '0'.charCodeAt(0)
-  var LOWER = 'a'.charCodeAt(0)
-  var UPPER = 'A'.charCodeAt(0)
-  var PLUS_URL_SAFE = '-'.charCodeAt(0)
-  var SLASH_URL_SAFE = '_'.charCodeAt(0)
-
-  function decode (elt) {
-    var code = elt.charCodeAt(0)
-    if (code === PLUS || code === PLUS_URL_SAFE) return 62 // '+'
-    if (code === SLASH || code === SLASH_URL_SAFE) return 63 // '/'
-    if (code < NUMBER) return -1 // no match
-    if (code < NUMBER + 10) return code - NUMBER + 26 + 26
-    if (code < UPPER + 26) return code - UPPER
-    if (code < LOWER + 26) return code - LOWER + 26
-  }
-
-  function b64ToByteArray (b64) {
-    var i, j, l, tmp, placeHolders, arr
-
-    if (b64.length % 4 > 0) {
-      throw new Error('Invalid string. Length must be a multiple of 4')
-    }
-
-    // the number of equal signs (place holders)
-    // if there are two placeholders, than the two characters before it
-    // represent one byte
-    // if there is only one, then the three characters before it represent 2 bytes
-    // this is just a cheap hack to not do indexOf twice
-    var len = b64.length
-    placeHolders = b64.charAt(len - 2) === '=' ? 2 : b64.charAt(len - 1) === '=' ? 1 : 0
-
-    // base64 is 4/3 + up to two characters of the original data
-    arr = new Arr(b64.length * 3 / 4 - placeHolders)
-
-    // if there are placeholders, only get up to the last complete 4 chars
-    l = placeHolders > 0 ? b64.length - 4 : b64.length
-
-    var L = 0
-
-    function push (v) {
-      arr[L++] = v
-    }
-
-    for (i = 0, j = 0; i < l; i += 4, j += 3) {
-      tmp = (decode(b64.charAt(i)) << 18) | (decode(b64.charAt(i + 1)) << 12) | (decode(b64.charAt(i + 2)) << 6) | decode(b64.charAt(i + 3))
-      push((tmp & 0xFF0000) >> 16)
-      push((tmp & 0xFF00) >> 8)
-      push(tmp & 0xFF)
-    }
-
-    if (placeHolders === 2) {
-      tmp = (decode(b64.charAt(i)) << 2) | (decode(b64.charAt(i + 1)) >> 4)
-      push(tmp & 0xFF)
-    } else if (placeHolders === 1) {
-      tmp = (decode(b64.charAt(i)) << 10) | (decode(b64.charAt(i + 1)) << 4) | (decode(b64.charAt(i + 2)) >> 2)
-      push((tmp >> 8) & 0xFF)
-      push(tmp & 0xFF)
-    }
-
-    return arr
-  }
-
-  function uint8ToBase64 (uint8) {
-    var i
-    var extraBytes = uint8.length % 3 // if we have 1 byte left, pad 2 bytes
-    var output = ''
-    var temp, length
-
-    function encode (num) {
-      return lookup.charAt(num)
-    }
-
-    function tripletToBase64 (num) {
-      return encode(num >> 18 & 0x3F) + encode(num >> 12 & 0x3F) + encode(num >> 6 & 0x3F) + encode(num & 0x3F)
-    }
-
-    // go through the array every three bytes, we'll deal with trailing stuff later
-    for (i = 0, length = uint8.length - extraBytes; i < length; i += 3) {
-      temp = (uint8[i] << 16) + (uint8[i + 1] << 8) + (uint8[i + 2])
-      output += tripletToBase64(temp)
-    }
-
-    // pad the end with zeros, but make sure to not forget the extra bytes
-    switch (extraBytes) {
-      case 1:
-        temp = uint8[uint8.length - 1]
-        output += encode(temp >> 2)
-        output += encode((temp << 4) & 0x3F)
-        output += '=='
-        break
-      case 2:
-        temp = (uint8[uint8.length - 2] << 8) + (uint8[uint8.length - 1])
-        output += encode(temp >> 10)
-        output += encode((temp >> 4) & 0x3F)
-        output += encode((temp << 2) & 0x3F)
-        output += '='
-        break
-      default:
-        break
-    }
-
-    return output
-  }
-
-  exports.toByteArray = b64ToByteArray
-  exports.fromByteArray = uint8ToBase64
-}(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
-
-},{}],5:[function(require,module,exports){
-exports.read = function (buffer, offset, isLE, mLen, nBytes) {
-  var e, m
-  var eLen = nBytes * 8 - mLen - 1
-  var eMax = (1 << eLen) - 1
-  var eBias = eMax >> 1
-  var nBits = -7
-  var i = isLE ? (nBytes - 1) : 0
-  var d = isLE ? -1 : 1
-  var s = buffer[offset + i]
-
-  i += d
-
-  e = s & ((1 << (-nBits)) - 1)
-  s >>= (-nBits)
-  nBits += eLen
-  for (; nBits > 0; e = e * 256 + buffer[offset + i], i += d, nBits -= 8) {}
-
-  m = e & ((1 << (-nBits)) - 1)
-  e >>= (-nBits)
-  nBits += mLen
-  for (; nBits > 0; m = m * 256 + buffer[offset + i], i += d, nBits -= 8) {}
-
-  if (e === 0) {
-    e = 1 - eBias
-  } else if (e === eMax) {
-    return m ? NaN : ((s ? -1 : 1) * Infinity)
-  } else {
-    m = m + Math.pow(2, mLen)
-    e = e - eBias
-  }
-  return (s ? -1 : 1) * m * Math.pow(2, e - mLen)
-}
-
-exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
-  var e, m, c
-  var eLen = nBytes * 8 - mLen - 1
-  var eMax = (1 << eLen) - 1
-  var eBias = eMax >> 1
-  var rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0)
-  var i = isLE ? 0 : (nBytes - 1)
-  var d = isLE ? 1 : -1
-  var s = value < 0 || (value === 0 && 1 / value < 0) ? 1 : 0
-
-  value = Math.abs(value)
-
-  if (isNaN(value) || value === Infinity) {
-    m = isNaN(value) ? 1 : 0
-    e = eMax
-  } else {
-    e = Math.floor(Math.log(value) / Math.LN2)
-    if (value * (c = Math.pow(2, -e)) < 1) {
-      e--
-      c *= 2
-    }
-    if (e + eBias >= 1) {
-      value += rt / c
-    } else {
-      value += rt * Math.pow(2, 1 - eBias)
-    }
-    if (value * c >= 2) {
-      e++
-      c /= 2
-    }
-
-    if (e + eBias >= eMax) {
-      m = 0
-      e = eMax
-    } else if (e + eBias >= 1) {
-      m = (value * c - 1) * Math.pow(2, mLen)
-      e = e + eBias
-    } else {
-      m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen)
-      e = 0
-    }
-  }
-
-  for (; mLen >= 8; buffer[offset + i] = m & 0xff, i += d, m /= 256, mLen -= 8) {}
-
-  e = (e << mLen) | m
-  eLen += mLen
-  for (; eLen > 0; buffer[offset + i] = e & 0xff, i += d, e /= 256, eLen -= 8) {}
-
-  buffer[offset + i - d] |= s * 128
-}
-
-},{}],6:[function(require,module,exports){
+},{"base64-js":2,"ieee754":12,"isarray":5}],5:[function(require,module,exports){
 var toString = {}.toString;
 
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
 
-},{}],7:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
+(function (Buffer){
+var clone = (function() {
+'use strict';
+
+/**
+ * Clones (copies) an Object using deep copying.
+ *
+ * This function supports circular references by default, but if you are certain
+ * there are no circular references in your object, you can save some CPU time
+ * by calling clone(obj, false).
+ *
+ * Caution: if `circular` is false and `parent` contains circular references,
+ * your program may enter an infinite loop and crash.
+ *
+ * @param `parent` - the object to be cloned
+ * @param `circular` - set to true if the object to be cloned may contain
+ *    circular references. (optional - true by default)
+ * @param `depth` - set to a number if the object is only to be cloned to
+ *    a particular depth. (optional - defaults to Infinity)
+ * @param `prototype` - sets the prototype to be used when cloning an object.
+ *    (optional - defaults to parent prototype).
+*/
+function clone(parent, circular, depth, prototype) {
+  var filter;
+  if (typeof circular === 'object') {
+    depth = circular.depth;
+    prototype = circular.prototype;
+    filter = circular.filter;
+    circular = circular.circular
+  }
+  // maintain two arrays for circular references, where corresponding parents
+  // and children have the same index
+  var allParents = [];
+  var allChildren = [];
+
+  var useBuffer = typeof Buffer != 'undefined';
+
+  if (typeof circular == 'undefined')
+    circular = true;
+
+  if (typeof depth == 'undefined')
+    depth = Infinity;
+
+  // recurse this function so we don't reset allParents and allChildren
+  function _clone(parent, depth) {
+    // cloning null always returns null
+    if (parent === null)
+      return null;
+
+    if (depth == 0)
+      return parent;
+
+    var child;
+    var proto;
+    if (typeof parent != 'object') {
+      return parent;
+    }
+
+    if (clone.__isArray(parent)) {
+      child = [];
+    } else if (clone.__isRegExp(parent)) {
+      child = new RegExp(parent.source, __getRegExpFlags(parent));
+      if (parent.lastIndex) child.lastIndex = parent.lastIndex;
+    } else if (clone.__isDate(parent)) {
+      child = new Date(parent.getTime());
+    } else if (useBuffer && Buffer.isBuffer(parent)) {
+      child = new Buffer(parent.length);
+      parent.copy(child);
+      return child;
+    } else {
+      if (typeof prototype == 'undefined') {
+        proto = Object.getPrototypeOf(parent);
+        child = Object.create(proto);
+      }
+      else {
+        child = Object.create(prototype);
+        proto = prototype;
+      }
+    }
+
+    if (circular) {
+      var index = allParents.indexOf(parent);
+
+      if (index != -1) {
+        return allChildren[index];
+      }
+      allParents.push(parent);
+      allChildren.push(child);
+    }
+
+    for (var i in parent) {
+      var attrs;
+      if (proto) {
+        attrs = Object.getOwnPropertyDescriptor(proto, i);
+      }
+
+      if (attrs && attrs.set == null) {
+        continue;
+      }
+      child[i] = _clone(parent[i], depth - 1);
+    }
+
+    return child;
+  }
+
+  return _clone(parent, depth);
+}
+
+/**
+ * Simple flat clone using prototype, accepts only objects, usefull for property
+ * override on FLAT configuration object (no nested props).
+ *
+ * USE WITH CAUTION! This may not behave as you wish if you do not know how this
+ * works.
+ */
+clone.clonePrototype = function clonePrototype(parent) {
+  if (parent === null)
+    return null;
+
+  var c = function () {};
+  c.prototype = parent;
+  return new c();
+};
+
+// private utility functions
+
+function __objToStr(o) {
+  return Object.prototype.toString.call(o);
+};
+clone.__objToStr = __objToStr;
+
+function __isDate(o) {
+  return typeof o === 'object' && __objToStr(o) === '[object Date]';
+};
+clone.__isDate = __isDate;
+
+function __isArray(o) {
+  return typeof o === 'object' && __objToStr(o) === '[object Array]';
+};
+clone.__isArray = __isArray;
+
+function __isRegExp(o) {
+  return typeof o === 'object' && __objToStr(o) === '[object RegExp]';
+};
+clone.__isRegExp = __isRegExp;
+
+function __getRegExpFlags(re) {
+  var flags = '';
+  if (re.global) flags += 'g';
+  if (re.ignoreCase) flags += 'i';
+  if (re.multiline) flags += 'm';
+  return flags;
+};
+clone.__getRegExpFlags = __getRegExpFlags;
+
+return clone;
+})();
+
+if (typeof module === 'object' && module.exports) {
+  module.exports = clone;
+}
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":4}],7:[function(require,module,exports){
+(function (Buffer){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// NOTE: These type checking functions intentionally don't use `instanceof`
+// because it is fragile and can be easily faked with `Object.create()`.
+
+function isArray(arg) {
+  if (Array.isArray) {
+    return Array.isArray(arg);
+  }
+  return objectToString(arg) === '[object Array]';
+}
+exports.isArray = isArray;
+
+function isBoolean(arg) {
+  return typeof arg === 'boolean';
+}
+exports.isBoolean = isBoolean;
+
+function isNull(arg) {
+  return arg === null;
+}
+exports.isNull = isNull;
+
+function isNullOrUndefined(arg) {
+  return arg == null;
+}
+exports.isNullOrUndefined = isNullOrUndefined;
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+exports.isNumber = isNumber;
+
+function isString(arg) {
+  return typeof arg === 'string';
+}
+exports.isString = isString;
+
+function isSymbol(arg) {
+  return typeof arg === 'symbol';
+}
+exports.isSymbol = isSymbol;
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+exports.isUndefined = isUndefined;
+
+function isRegExp(re) {
+  return objectToString(re) === '[object RegExp]';
+}
+exports.isRegExp = isRegExp;
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+exports.isObject = isObject;
+
+function isDate(d) {
+  return objectToString(d) === '[object Date]';
+}
+exports.isDate = isDate;
+
+function isError(e) {
+  return (objectToString(e) === '[object Error]' || e instanceof Error);
+}
+exports.isError = isError;
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+exports.isFunction = isFunction;
+
+function isPrimitive(arg) {
+  return arg === null ||
+         typeof arg === 'boolean' ||
+         typeof arg === 'number' ||
+         typeof arg === 'string' ||
+         typeof arg === 'symbol' ||  // ES6 symbol
+         typeof arg === 'undefined';
+}
+exports.isPrimitive = isPrimitive;
+
+exports.isBuffer = Buffer.isBuffer;
+
+function objectToString(o) {
+  return Object.prototype.toString.call(o);
+}
+
+}).call(this,{"isBuffer":require("../../is-buffer/index.js")})
+},{"../../is-buffer/index.js":14}],8:[function(require,module,exports){
+var clone = require('clone');
+
+module.exports = function(options, defaults) {
+  options = options || {};
+
+  Object.keys(defaults).forEach(function(key) {
+    if (typeof options[key] === 'undefined') {
+      options[key] = clone(defaults[key]);
+    }
+  });
+
+  return options;
+};
+},{"clone":6}],9:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -1976,7 +2218,148 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],8:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
+var ERROR_MESSAGE = 'Function.prototype.bind called on incompatible ';
+var slice = Array.prototype.slice;
+var toStr = Object.prototype.toString;
+var funcType = '[object Function]';
+
+module.exports = function bind(that) {
+    var target = this;
+    if (typeof target !== 'function' || toStr.call(target) !== funcType) {
+        throw new TypeError(ERROR_MESSAGE + target);
+    }
+    var args = slice.call(arguments, 1);
+
+    var bound;
+    var binder = function () {
+        if (this instanceof bound) {
+            var result = target.apply(
+                this,
+                args.concat(slice.call(arguments))
+            );
+            if (Object(result) === result) {
+                return result;
+            }
+            return this;
+        } else {
+            return target.apply(
+                that,
+                args.concat(slice.call(arguments))
+            );
+        }
+    };
+
+    var boundLength = Math.max(0, target.length - args.length);
+    var boundArgs = [];
+    for (var i = 0; i < boundLength; i++) {
+        boundArgs.push('$' + i);
+    }
+
+    bound = Function('binder', 'return function (' + boundArgs.join(',') + '){ return binder.apply(this,arguments); }')(binder);
+
+    if (target.prototype) {
+        var Empty = function Empty() {};
+        Empty.prototype = target.prototype;
+        bound.prototype = new Empty();
+        Empty.prototype = null;
+    }
+
+    return bound;
+};
+
+},{}],11:[function(require,module,exports){
+var implementation = require('./implementation');
+
+module.exports = Function.prototype.bind || implementation;
+
+},{"./implementation":10}],12:[function(require,module,exports){
+exports.read = function (buffer, offset, isLE, mLen, nBytes) {
+  var e, m
+  var eLen = nBytes * 8 - mLen - 1
+  var eMax = (1 << eLen) - 1
+  var eBias = eMax >> 1
+  var nBits = -7
+  var i = isLE ? (nBytes - 1) : 0
+  var d = isLE ? -1 : 1
+  var s = buffer[offset + i]
+
+  i += d
+
+  e = s & ((1 << (-nBits)) - 1)
+  s >>= (-nBits)
+  nBits += eLen
+  for (; nBits > 0; e = e * 256 + buffer[offset + i], i += d, nBits -= 8) {}
+
+  m = e & ((1 << (-nBits)) - 1)
+  e >>= (-nBits)
+  nBits += mLen
+  for (; nBits > 0; m = m * 256 + buffer[offset + i], i += d, nBits -= 8) {}
+
+  if (e === 0) {
+    e = 1 - eBias
+  } else if (e === eMax) {
+    return m ? NaN : ((s ? -1 : 1) * Infinity)
+  } else {
+    m = m + Math.pow(2, mLen)
+    e = e - eBias
+  }
+  return (s ? -1 : 1) * m * Math.pow(2, e - mLen)
+}
+
+exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
+  var e, m, c
+  var eLen = nBytes * 8 - mLen - 1
+  var eMax = (1 << eLen) - 1
+  var eBias = eMax >> 1
+  var rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0)
+  var i = isLE ? 0 : (nBytes - 1)
+  var d = isLE ? 1 : -1
+  var s = value < 0 || (value === 0 && 1 / value < 0) ? 1 : 0
+
+  value = Math.abs(value)
+
+  if (isNaN(value) || value === Infinity) {
+    m = isNaN(value) ? 1 : 0
+    e = eMax
+  } else {
+    e = Math.floor(Math.log(value) / Math.LN2)
+    if (value * (c = Math.pow(2, -e)) < 1) {
+      e--
+      c *= 2
+    }
+    if (e + eBias >= 1) {
+      value += rt / c
+    } else {
+      value += rt * Math.pow(2, 1 - eBias)
+    }
+    if (value * c >= 2) {
+      e++
+      c /= 2
+    }
+
+    if (e + eBias >= eMax) {
+      m = 0
+      e = eMax
+    } else if (e + eBias >= 1) {
+      m = (value * c - 1) * Math.pow(2, mLen)
+      e = e + eBias
+    } else {
+      m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen)
+      e = 0
+    }
+  }
+
+  for (; mLen >= 8; buffer[offset + i] = m & 0xff, i += d, m /= 256, mLen -= 8) {}
+
+  e = (e << mLen) | m
+  eLen += mLen
+  for (; eLen > 0; buffer[offset + i] = e & 0xff, i += d, e /= 256, eLen -= 8) {}
+
+  buffer[offset + i - d] |= s * 128
+}
+
+},{}],13:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -2001,7 +2384,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],9:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 /**
  * Determine if an object is Buffer
  *
@@ -2020,12 +2403,465 @@ module.exports = function (obj) {
     ))
 }
 
-},{}],10:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 module.exports = Array.isArray || function (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]';
 };
 
-},{}],11:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
+(function (process,Buffer){
+'use strict';
+var Readable = require('stream').Readable;
+var util = require('util');
+
+/**
+ * Turns a MediaStream object (from getUserMedia) into a Node.js Readable stream and optionally converts the audio to Buffers
+ *
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/Navigator/getUserMedia
+ *
+ * @param {MediaStream} stream https://developer.mozilla.org/en-US/docs/Web/API/MediaStream
+ * @param {Object} [opts] options
+ * @param {Boolean} [opts.objectMode=false] Puts the stream into ObjectMode where it emits AudioBuffers instead of Buffers - see https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer
+ * @param {Number|null} [opts.bufferSize=null] https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
+ * @constructor
+ */
+function MicrophoneStream(stream, opts) {
+  // "It is recommended for authors to not specify this buffer size and allow the implementation to pick a good
+  // buffer size to balance between latency and audio quality."
+  // https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
+  // however, webkitAudioContext (safari) requires it to be set'
+  // Possible values: null, 256, 512, 1024, 2048, 4096, 8192, 16384
+  var bufferSize = (typeof window.AudioContext === 'undefined' ? 4096 : null);
+  opts = opts || {};
+
+  bufferSize = opts.bufferSize || bufferSize;
+
+  // We can only emit one channel's worth of audio, so only one input. (Who has multiple microphones anyways?)
+  var inputChannels = 1;
+
+  // we shouldn't need any output channels (going back to the browser), but chrome is buggy and won't give us any audio without one
+  var outputChannels = 1;
+
+  Readable.call(this, opts);
+
+  var self = this;
+  var recording = true;
+
+  /**
+   * Convert and emit the raw audio data
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/ScriptProcessorNode/onaudioprocess
+   * @param {AudioProcessingEvent} e https://developer.mozilla.org/en-US/docs/Web/API/AudioProcessingEvent
+   */
+  function recorderProcess(e) {
+    // onaudioprocess can be called at least once after we've stopped
+    if (recording) {
+      self.push(opts.objectMode ? e.inputBuffer : new Buffer(e.inputBuffer.getChannelData(0)));
+    }
+  }
+
+  var AudioContext = window.AudioContext || window.webkitAudioContext;
+  var context = new AudioContext();
+  var audioInput = context.createMediaStreamSource(stream);
+  var recorder = context.createScriptProcessor(bufferSize, inputChannels, outputChannels);
+
+  recorder.onaudioprocess = recorderProcess;
+
+  audioInput.connect(recorder);
+
+  // other half of workaround for chrome bugs
+  recorder.connect(context.destination);
+
+  this.stop = function() {
+    try {
+      stream.getTracks()[0].stop();
+    } catch (ex) {
+      // This fails in some older versions of chrome. Nothing we can do about it.
+    }
+    recorder.disconnect();
+    audioInput.disconnect();
+    try {
+      context.close();
+    } catch (ex) {
+      // this can also fail in older versions of chrome
+    }
+    recording = false;
+    self.push(null);
+    self.emit('close');
+  };
+
+  process.nextTick(function() {
+    self.emit('format', {
+      channels: 1,
+      bitDepth: 32,
+      sampleRate: context.sampleRate,
+      signed: true,
+      float: true
+    });
+  });
+}
+util.inherits(MicrophoneStream, Readable);
+
+MicrophoneStream.prototype._read = function(/* bytes */) {
+  // no-op, (flow-control doesn't really work on sound)
+};
+
+/**
+ * Converts a Buffer back into the raw Float32Array format that browsers use.
+ * Note: this is just a new DataView for the same underlying buffer -
+ * the actual audio data is not copied or changed here.
+ *
+ * @param {Buffer} chunk node-style buffer of audio data from a 'data' event or read() call
+ * @return {Float32Array} raw 32-bit float data view of audio data
+ */
+MicrophoneStream.toRaw = function toFloat32(chunk) {
+  return new Float32Array(chunk.buffer);
+};
+
+module.exports = MicrophoneStream;
+
+}).call(this,require('_process'),require("buffer").Buffer)
+},{"_process":24,"buffer":4,"stream":36,"util":40}],17:[function(require,module,exports){
+'use strict';
+
+// modified from https://github.com/es-shims/es5-shim
+var has = Object.prototype.hasOwnProperty;
+var toStr = Object.prototype.toString;
+var slice = Array.prototype.slice;
+var isArgs = require('./isArguments');
+var hasDontEnumBug = !({ toString: null }).propertyIsEnumerable('toString');
+var hasProtoEnumBug = function () {}.propertyIsEnumerable('prototype');
+var dontEnums = [
+	'toString',
+	'toLocaleString',
+	'valueOf',
+	'hasOwnProperty',
+	'isPrototypeOf',
+	'propertyIsEnumerable',
+	'constructor'
+];
+var equalsConstructorPrototype = function (o) {
+	var ctor = o.constructor;
+	return ctor && ctor.prototype === o;
+};
+var blacklistedKeys = {
+	$console: true,
+	$frame: true,
+	$frameElement: true,
+	$frames: true,
+	$parent: true,
+	$self: true,
+	$webkitIndexedDB: true,
+	$webkitStorageInfo: true,
+	$window: true
+};
+var hasAutomationEqualityBug = (function () {
+	/* global window */
+	if (typeof window === 'undefined') { return false; }
+	for (var k in window) {
+		try {
+			if (!blacklistedKeys['$' + k] && has.call(window, k) && window[k] !== null && typeof window[k] === 'object') {
+				try {
+					equalsConstructorPrototype(window[k]);
+				} catch (e) {
+					return true;
+				}
+			}
+		} catch (e) {
+			return true;
+		}
+	}
+	return false;
+}());
+var equalsConstructorPrototypeIfNotBuggy = function (o) {
+	/* global window */
+	if (typeof window === 'undefined' || !hasAutomationEqualityBug) {
+		return equalsConstructorPrototype(o);
+	}
+	try {
+		return equalsConstructorPrototype(o);
+	} catch (e) {
+		return false;
+	}
+};
+
+var keysShim = function keys(object) {
+	var isObject = object !== null && typeof object === 'object';
+	var isFunction = toStr.call(object) === '[object Function]';
+	var isArguments = isArgs(object);
+	var isString = isObject && toStr.call(object) === '[object String]';
+	var theKeys = [];
+
+	if (!isObject && !isFunction && !isArguments) {
+		throw new TypeError('Object.keys called on a non-object');
+	}
+
+	var skipProto = hasProtoEnumBug && isFunction;
+	if (isString && object.length > 0 && !has.call(object, 0)) {
+		for (var i = 0; i < object.length; ++i) {
+			theKeys.push(String(i));
+		}
+	}
+
+	if (isArguments && object.length > 0) {
+		for (var j = 0; j < object.length; ++j) {
+			theKeys.push(String(j));
+		}
+	} else {
+		for (var name in object) {
+			if (!(skipProto && name === 'prototype') && has.call(object, name)) {
+				theKeys.push(String(name));
+			}
+		}
+	}
+
+	if (hasDontEnumBug) {
+		var skipConstructor = equalsConstructorPrototypeIfNotBuggy(object);
+
+		for (var k = 0; k < dontEnums.length; ++k) {
+			if (!(skipConstructor && dontEnums[k] === 'constructor') && has.call(object, dontEnums[k])) {
+				theKeys.push(dontEnums[k]);
+			}
+		}
+	}
+	return theKeys;
+};
+
+keysShim.shim = function shimObjectKeys() {
+	if (Object.keys) {
+		var keysWorksWithArguments = (function () {
+			// Safari 5.0 bug
+			return (Object.keys(arguments) || '').length === 2;
+		}(1, 2));
+		if (!keysWorksWithArguments) {
+			var originalKeys = Object.keys;
+			Object.keys = function keys(object) {
+				if (isArgs(object)) {
+					return originalKeys(slice.call(object));
+				} else {
+					return originalKeys(object);
+				}
+			};
+		}
+	} else {
+		Object.keys = keysShim;
+	}
+	return Object.keys || keysShim;
+};
+
+module.exports = keysShim;
+
+},{"./isArguments":18}],18:[function(require,module,exports){
+'use strict';
+
+var toStr = Object.prototype.toString;
+
+module.exports = function isArguments(value) {
+	var str = toStr.call(value);
+	var isArgs = str === '[object Arguments]';
+	if (!isArgs) {
+		isArgs = str !== '[object Array]' &&
+			value !== null &&
+			typeof value === 'object' &&
+			typeof value.length === 'number' &&
+			value.length >= 0 &&
+			toStr.call(value.callee) === '[object Function]';
+	}
+	return isArgs;
+};
+
+},{}],19:[function(require,module,exports){
+'use strict';
+
+var keys = require('object-keys');
+
+module.exports = function hasSymbols() {
+	if (typeof Symbol !== 'function' || typeof Object.getOwnPropertySymbols !== 'function') { return false; }
+	if (typeof Symbol.iterator === 'symbol') { return true; }
+
+	var obj = {};
+	var sym = Symbol('test');
+	if (typeof sym === 'string') { return false; }
+
+	// temp disabled per https://github.com/ljharb/object.assign/issues/17
+	// if (sym instanceof Symbol) { return false; }
+	// temp disabled per https://github.com/WebReflection/get-own-property-symbols/issues/4
+	// if (!(Object(sym) instanceof Symbol)) { return false; }
+
+	var symVal = 42;
+	obj[sym] = symVal;
+	for (sym in obj) { return false; }
+	if (keys(obj).length !== 0) { return false; }
+	if (typeof Object.keys === 'function' && Object.keys(obj).length !== 0) { return false; }
+
+	if (typeof Object.getOwnPropertyNames === 'function' && Object.getOwnPropertyNames(obj).length !== 0) { return false; }
+
+	var syms = Object.getOwnPropertySymbols(obj);
+	if (syms.length !== 1 || syms[0] !== sym) { return false; }
+
+	if (!Object.prototype.propertyIsEnumerable.call(obj, sym)) { return false; }
+
+	if (typeof Object.getOwnPropertyDescriptor === 'function') {
+		var descriptor = Object.getOwnPropertyDescriptor(obj, sym);
+		if (descriptor.value !== symVal || descriptor.enumerable !== true) { return false; }
+	}
+
+	return true;
+};
+
+},{"object-keys":17}],20:[function(require,module,exports){
+'use strict';
+
+// modified from https://github.com/es-shims/es6-shim
+var keys = require('object-keys');
+var bind = require('function-bind');
+var canBeObject = function (obj) {
+	return typeof obj !== 'undefined' && obj !== null;
+};
+var hasSymbols = require('./hasSymbols')();
+var toObject = Object;
+var push = bind.call(Function.call, Array.prototype.push);
+var propIsEnumerable = bind.call(Function.call, Object.prototype.propertyIsEnumerable);
+
+module.exports = function assign(target, source1) {
+	if (!canBeObject(target)) { throw new TypeError('target must be an object'); }
+	var objTarget = toObject(target);
+	var s, source, i, props, syms, value, key;
+	for (s = 1; s < arguments.length; ++s) {
+		source = toObject(arguments[s]);
+		props = keys(source);
+		if (hasSymbols && Object.getOwnPropertySymbols) {
+			syms = Object.getOwnPropertySymbols(source);
+			for (i = 0; i < syms.length; ++i) {
+				key = syms[i];
+				if (propIsEnumerable(source, key)) {
+					push(props, key);
+				}
+			}
+		}
+		for (i = 0; i < props.length; ++i) {
+			key = props[i];
+			value = source[key];
+			if (propIsEnumerable(source, key)) {
+				objTarget[key] = value;
+			}
+		}
+	}
+	return objTarget;
+};
+
+},{"./hasSymbols":19,"function-bind":11,"object-keys":17}],21:[function(require,module,exports){
+'use strict';
+
+var implementation = require('./implementation');
+
+var lacksProperEnumerationOrder = function () {
+	if (!Object.assign) {
+		return false;
+	}
+	// v8, specifically in node 4.x, has a bug with incorrect property enumeration order
+	// note: this does not detect the bug unless there's 20 characters
+	var str = 'abcdefghijklmnopqrst';
+	var letters = str.split('');
+	var map = {};
+	for (var i = 0; i < letters.length; ++i) {
+		map[letters[i]] = letters[i];
+	}
+	var obj = Object.assign({}, map);
+	var actual = '';
+	for (var k in obj) {
+		actual += k;
+	}
+	return str !== actual;
+};
+
+var assignHasPendingExceptions = function () {
+	if (!Object.assign || !Object.preventExtensions) {
+		return false;
+	}
+	// Firefox 37 still has "pending exception" logic in its Object.assign implementation,
+	// which is 72% slower than our shim, and Firefox 40's native implementation.
+	var thrower = Object.preventExtensions({ 1: 2 });
+	try {
+		Object.assign(thrower, 'xy');
+	} catch (e) {
+		return thrower[1] === 'y';
+	}
+};
+
+module.exports = function getPolyfill() {
+	if (!Object.assign) {
+		return implementation;
+	}
+	if (lacksProperEnumerationOrder()) {
+		return implementation;
+	}
+	if (assignHasPendingExceptions()) {
+		return implementation;
+	}
+	return Object.assign;
+};
+
+},{"./implementation":20}],22:[function(require,module,exports){
+/*!
+ * object.pick <https://github.com/jonschlinkert/object.pick>
+ *
+ * Copyright (c) 2014-2015 Jon Schlinkert, contributors.
+ * Licensed under the MIT License
+ */
+
+'use strict';
+
+module.exports = function pick(obj, keys) {
+  var res = {};
+  var i = 0;
+
+  if (typeof obj !== 'object') {
+    return res;
+  }
+
+  if (typeof keys === 'string') {
+    if (keys in obj) {
+      res[keys] = obj[keys];
+    }
+    return res;
+  }
+
+  var len = keys.length;
+
+  while (len--) {
+    var key = keys[i++];
+    if (key in obj) {
+      res[key] = obj[key];
+    }
+  }
+  return res;
+};
+
+},{}],23:[function(require,module,exports){
+(function (process){
+'use strict';
+
+if (!process.version ||
+    process.version.indexOf('v0.') === 0 ||
+    process.version.indexOf('v1.') === 0 && process.version.indexOf('v1.8.') !== 0) {
+  module.exports = nextTick;
+} else {
+  module.exports = process.nextTick;
+}
+
+function nextTick(fn) {
+  var args = new Array(arguments.length - 1);
+  var i = 0;
+  while (i < args.length) {
+    args[i++] = arguments[i];
+  }
+  process.nextTick(function afterTick() {
+    fn.apply(null, args);
+  });
+}
+
+}).call(this,require('_process'))
+},{"_process":24}],24:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -2118,10 +2954,148 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],12:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
+(function (global,Buffer){
+'use strict';
+
+var Readable = require('stream').Readable;
+// When required from browserify, Buffer is also an Uint8Array, which is important for ejson.
+var inherits = require('inherits');
+var FileReader = global.FileReader;
+var Uint8Array = global.Uint8Array;
+
+/**
+ * Read W3C Blob & File objects as a Node stream.
+ * @param {Blob} blob
+ * @constructor
+ */
+function ReadableBlobStream(blob, opts)
+{
+        if (!(this instanceof ReadableBlobStream)) {
+          return new ReadableBlobStream(blob, opts);
+        }
+
+        opts = opts || {};
+        opts.objectMode = false;
+        Readable.call(this, opts);
+
+        if (!blob)
+        {
+                throw Error('Missing argument "blob"');
+        }
+
+        if (typeof blob.slice !== 'function')
+        {
+                throw Error('Given argument "blob" is not really a Blob/File or your environment does not support .slice()');
+        }
+
+        if (!FileReader)
+        {
+                throw Error('Your environment does not support FileReader');
+        }
+
+        if (!Uint8Array)
+        {
+                throw Error('Your environment does not support Uint8Array');
+        }
+
+        this.totalSize = blob.size;
+        this._blob = blob;
+        this._nextByteStart = 0;
+}
+module.exports = ReadableBlobStream;
+inherits(ReadableBlobStream, Readable);
+
+function uint8ArrayToBuffer(buf)
+{
+        if (typeof Buffer._augment === 'function')
+        {
+                buf = Buffer._augment(buf);
+
+                if (!(buf instanceof Uint8Array))
+                {
+                        throw Error('Assertion error, buf should be an Uint8Array');
+                }
+        }
+        else
+        {
+                buf = new Buffer(buf);
+        }
+
+        return buf;
+}
+
+function bufferToUint8Array(buf)
+{
+        buf = new Uint8Array(buf);
+        if (typeof Buffer._augment === 'function')
+        {
+                buf = Buffer._augment(buf);
+                // buf is now both an Uint8Array and an Buffer
+        }
+
+        if (!(buf instanceof Uint8Array))  // this is the check ejson uses
+        {
+                // this is the check ejson uses
+                throw Error('Assertion error, buf should be an Uint8Array');
+        }
+
+        return buf;
+}
+
+ReadableBlobStream.prototype.read = function()
+{
+        var buf = ReadableBlobStream.super_.prototype.read.apply(this, arguments);
+
+        // make sure it is a Uint8Array in case browserify's Buffer
+        // stops using Uint8Array
+        if (Buffer.isBuffer(buf) && !(buf instanceof Uint8Array))
+        {
+                buf = bufferToUint8Array(buf);
+        }
+
+        return buf;
+};
+
+ReadableBlobStream.prototype._read = function(chunkSize)
+{
+        var size = this._blob.size;
+        var start, end;
+
+        start = this._nextByteStart;
+        end = Math.min(start + chunkSize, size); // exclusive
+        this._nextByteStart = end;
+
+        if (start >= this._blob.size)
+        {
+                return void this.push(null);
+        }
+
+        var chunk = this._blob.slice(start, end);
+        var reader = new FileReader();
+
+        reader.onload = function()
+        {
+                // reader.result is an ArrayBuffer
+                var buf = new Uint8Array(reader.result);
+                buf = uint8ArrayToBuffer(buf);
+
+                this.push(buf);
+        }.bind(this);
+
+        reader.onerror = function()
+        {
+                this.emit('error', reader.error);
+        }.bind(this);
+
+        reader.readAsArrayBuffer(chunk);
+};
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
+},{"buffer":4,"inherits":13,"stream":36}],26:[function(require,module,exports){
 module.exports = require("./lib/_stream_duplex.js")
 
-},{"./lib/_stream_duplex.js":13}],13:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":27}],27:[function(require,module,exports){
 // a duplex stream is just a stream that is both readable and writable.
 // Since JS doesn't have multiple prototypal inheritance, this class
 // prototypally inherits from Readable, and then parasitically from
@@ -2205,7 +3179,7 @@ function forEach (xs, f) {
   }
 }
 
-},{"./_stream_readable":15,"./_stream_writable":17,"core-util-is":18,"inherits":8,"process-nextick-args":19}],14:[function(require,module,exports){
+},{"./_stream_readable":29,"./_stream_writable":31,"core-util-is":7,"inherits":13,"process-nextick-args":23}],28:[function(require,module,exports){
 // a passthrough stream.
 // basically just the most minimal sort of Transform stream.
 // Every written chunk gets output as-is.
@@ -2234,7 +3208,7 @@ PassThrough.prototype._transform = function(chunk, encoding, cb) {
   cb(null, chunk);
 };
 
-},{"./_stream_transform":16,"core-util-is":18,"inherits":8}],15:[function(require,module,exports){
+},{"./_stream_transform":30,"core-util-is":7,"inherits":13}],29:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3213,7 +4187,7 @@ function indexOf (xs, x) {
 }
 
 }).call(this,require('_process'))
-},{"./_stream_duplex":13,"_process":11,"buffer":3,"core-util-is":18,"events":7,"inherits":8,"isarray":10,"process-nextick-args":19,"string_decoder/":26,"util":2}],16:[function(require,module,exports){
+},{"./_stream_duplex":27,"_process":24,"buffer":4,"core-util-is":7,"events":9,"inherits":13,"isarray":15,"process-nextick-args":23,"string_decoder/":37,"util":3}],30:[function(require,module,exports){
 // a transform stream is a readable/writable stream where you do
 // something with the data.  Sometimes it's called a "filter",
 // but that's not a great name for it, since that implies a thing where
@@ -3412,7 +4386,7 @@ function done(stream, er) {
   return stream.push(null);
 }
 
-},{"./_stream_duplex":13,"core-util-is":18,"inherits":8}],17:[function(require,module,exports){
+},{"./_stream_duplex":27,"core-util-is":7,"inherits":13}],31:[function(require,module,exports){
 // A bit simpler than readable streams.
 // Implement an async ._write(chunk, encoding, cb), and it'll handle all
 // the drain event emission and buffering.
@@ -3943,216 +4917,10 @@ function endWritable(stream, state, cb) {
   state.ended = true;
 }
 
-},{"./_stream_duplex":13,"buffer":3,"core-util-is":18,"events":7,"inherits":8,"process-nextick-args":19,"util-deprecate":20}],18:[function(require,module,exports){
-(function (Buffer){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-// NOTE: These type checking functions intentionally don't use `instanceof`
-// because it is fragile and can be easily faked with `Object.create()`.
-
-function isArray(arg) {
-  if (Array.isArray) {
-    return Array.isArray(arg);
-  }
-  return objectToString(arg) === '[object Array]';
-}
-exports.isArray = isArray;
-
-function isBoolean(arg) {
-  return typeof arg === 'boolean';
-}
-exports.isBoolean = isBoolean;
-
-function isNull(arg) {
-  return arg === null;
-}
-exports.isNull = isNull;
-
-function isNullOrUndefined(arg) {
-  return arg == null;
-}
-exports.isNullOrUndefined = isNullOrUndefined;
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-exports.isNumber = isNumber;
-
-function isString(arg) {
-  return typeof arg === 'string';
-}
-exports.isString = isString;
-
-function isSymbol(arg) {
-  return typeof arg === 'symbol';
-}
-exports.isSymbol = isSymbol;
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-exports.isUndefined = isUndefined;
-
-function isRegExp(re) {
-  return objectToString(re) === '[object RegExp]';
-}
-exports.isRegExp = isRegExp;
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-exports.isObject = isObject;
-
-function isDate(d) {
-  return objectToString(d) === '[object Date]';
-}
-exports.isDate = isDate;
-
-function isError(e) {
-  return (objectToString(e) === '[object Error]' || e instanceof Error);
-}
-exports.isError = isError;
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-exports.isFunction = isFunction;
-
-function isPrimitive(arg) {
-  return arg === null ||
-         typeof arg === 'boolean' ||
-         typeof arg === 'number' ||
-         typeof arg === 'string' ||
-         typeof arg === 'symbol' ||  // ES6 symbol
-         typeof arg === 'undefined';
-}
-exports.isPrimitive = isPrimitive;
-
-exports.isBuffer = Buffer.isBuffer;
-
-function objectToString(o) {
-  return Object.prototype.toString.call(o);
-}
-
-}).call(this,{"isBuffer":require("../../../../insert-module-globals/node_modules/is-buffer/index.js")})
-},{"../../../../insert-module-globals/node_modules/is-buffer/index.js":9}],19:[function(require,module,exports){
-(function (process){
-'use strict';
-
-if (!process.version ||
-    process.version.indexOf('v0.') === 0 ||
-    process.version.indexOf('v1.') === 0 && process.version.indexOf('v1.8.') !== 0) {
-  module.exports = nextTick;
-} else {
-  module.exports = process.nextTick;
-}
-
-function nextTick(fn) {
-  var args = new Array(arguments.length - 1);
-  var i = 0;
-  while (i < args.length) {
-    args[i++] = arguments[i];
-  }
-  process.nextTick(function afterTick() {
-    fn.apply(null, args);
-  });
-}
-
-}).call(this,require('_process'))
-},{"_process":11}],20:[function(require,module,exports){
-(function (global){
-
-/**
- * Module exports.
- */
-
-module.exports = deprecate;
-
-/**
- * Mark that a method should not be used.
- * Returns a modified function which warns once by default.
- *
- * If `localStorage.noDeprecation = true` is set, then it is a no-op.
- *
- * If `localStorage.throwDeprecation = true` is set, then deprecated functions
- * will throw an Error when invoked.
- *
- * If `localStorage.traceDeprecation = true` is set, then deprecated functions
- * will invoke `console.trace()` instead of `console.error()`.
- *
- * @param {Function} fn - the function to deprecate
- * @param {String} msg - the string to print to the console when `fn` is invoked
- * @returns {Function} a new "deprecated" version of `fn`
- * @api public
- */
-
-function deprecate (fn, msg) {
-  if (config('noDeprecation')) {
-    return fn;
-  }
-
-  var warned = false;
-  function deprecated() {
-    if (!warned) {
-      if (config('throwDeprecation')) {
-        throw new Error(msg);
-      } else if (config('traceDeprecation')) {
-        console.trace(msg);
-      } else {
-        console.warn(msg);
-      }
-      warned = true;
-    }
-    return fn.apply(this, arguments);
-  }
-
-  return deprecated;
-}
-
-/**
- * Checks `localStorage` for boolean values for the given `name`.
- *
- * @param {String} name
- * @returns {Boolean}
- * @api private
- */
-
-function config (name) {
-  // accessing global.localStorage can trigger a DOMException in sandboxed iframes
-  try {
-    if (!global.localStorage) return false;
-  } catch (_) {
-    return false;
-  }
-  var val = global.localStorage[name];
-  if (null == val) return false;
-  return String(val).toLowerCase() === 'true';
-}
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],21:[function(require,module,exports){
+},{"./_stream_duplex":27,"buffer":4,"core-util-is":7,"events":9,"inherits":13,"process-nextick-args":23,"util-deprecate":38}],32:[function(require,module,exports){
 module.exports = require("./lib/_stream_passthrough.js")
 
-},{"./lib/_stream_passthrough.js":14}],22:[function(require,module,exports){
+},{"./lib/_stream_passthrough.js":28}],33:[function(require,module,exports){
 var Stream = (function (){
   try {
     return require('st' + 'ream'); // hack to fix a circular dependency issue when used with browserify
@@ -4166,13 +4934,13 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":13,"./lib/_stream_passthrough.js":14,"./lib/_stream_readable.js":15,"./lib/_stream_transform.js":16,"./lib/_stream_writable.js":17}],23:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":27,"./lib/_stream_passthrough.js":28,"./lib/_stream_readable.js":29,"./lib/_stream_transform.js":30,"./lib/_stream_writable.js":31}],34:[function(require,module,exports){
 module.exports = require("./lib/_stream_transform.js")
 
-},{"./lib/_stream_transform.js":16}],24:[function(require,module,exports){
+},{"./lib/_stream_transform.js":30}],35:[function(require,module,exports){
 module.exports = require("./lib/_stream_writable.js")
 
-},{"./lib/_stream_writable.js":17}],25:[function(require,module,exports){
+},{"./lib/_stream_writable.js":31}],36:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4301,7 +5069,7 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":7,"inherits":8,"readable-stream/duplex.js":12,"readable-stream/passthrough.js":21,"readable-stream/readable.js":22,"readable-stream/transform.js":23,"readable-stream/writable.js":24}],26:[function(require,module,exports){
+},{"events":9,"inherits":13,"readable-stream/duplex.js":26,"readable-stream/passthrough.js":32,"readable-stream/readable.js":33,"readable-stream/transform.js":34,"readable-stream/writable.js":35}],37:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4524,14 +5292,85 @@ function base64DetectIncompleteChar(buffer) {
   this.charLength = this.charReceived ? 3 : 0;
 }
 
-},{"buffer":3}],27:[function(require,module,exports){
+},{"buffer":4}],38:[function(require,module,exports){
+(function (global){
+
+/**
+ * Module exports.
+ */
+
+module.exports = deprecate;
+
+/**
+ * Mark that a method should not be used.
+ * Returns a modified function which warns once by default.
+ *
+ * If `localStorage.noDeprecation = true` is set, then it is a no-op.
+ *
+ * If `localStorage.throwDeprecation = true` is set, then deprecated functions
+ * will throw an Error when invoked.
+ *
+ * If `localStorage.traceDeprecation = true` is set, then deprecated functions
+ * will invoke `console.trace()` instead of `console.error()`.
+ *
+ * @param {Function} fn - the function to deprecate
+ * @param {String} msg - the string to print to the console when `fn` is invoked
+ * @returns {Function} a new "deprecated" version of `fn`
+ * @api public
+ */
+
+function deprecate (fn, msg) {
+  if (config('noDeprecation')) {
+    return fn;
+  }
+
+  var warned = false;
+  function deprecated() {
+    if (!warned) {
+      if (config('throwDeprecation')) {
+        throw new Error(msg);
+      } else if (config('traceDeprecation')) {
+        console.trace(msg);
+      } else {
+        console.warn(msg);
+      }
+      warned = true;
+    }
+    return fn.apply(this, arguments);
+  }
+
+  return deprecated;
+}
+
+/**
+ * Checks `localStorage` for boolean values for the given `name`.
+ *
+ * @param {String} name
+ * @returns {Boolean}
+ * @api private
+ */
+
+function config (name) {
+  // accessing global.localStorage can trigger a DOMException in sandboxed iframes
+  try {
+    if (!global.localStorage) return false;
+  } catch (_) {
+    return false;
+  }
+  var val = global.localStorage[name];
+  if (null == val) return false;
+  return String(val).toLowerCase() === 'true';
+}
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],39:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],28:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -5121,469 +5960,7 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":27,"_process":11,"inherits":8}],29:[function(require,module,exports){
-(function (Buffer){
-var clone = (function() {
-'use strict';
-
-/**
- * Clones (copies) an Object using deep copying.
- *
- * This function supports circular references by default, but if you are certain
- * there are no circular references in your object, you can save some CPU time
- * by calling clone(obj, false).
- *
- * Caution: if `circular` is false and `parent` contains circular references,
- * your program may enter an infinite loop and crash.
- *
- * @param `parent` - the object to be cloned
- * @param `circular` - set to true if the object to be cloned may contain
- *    circular references. (optional - true by default)
- * @param `depth` - set to a number if the object is only to be cloned to
- *    a particular depth. (optional - defaults to Infinity)
- * @param `prototype` - sets the prototype to be used when cloning an object.
- *    (optional - defaults to parent prototype).
-*/
-function clone(parent, circular, depth, prototype) {
-  var filter;
-  if (typeof circular === 'object') {
-    depth = circular.depth;
-    prototype = circular.prototype;
-    filter = circular.filter;
-    circular = circular.circular
-  }
-  // maintain two arrays for circular references, where corresponding parents
-  // and children have the same index
-  var allParents = [];
-  var allChildren = [];
-
-  var useBuffer = typeof Buffer != 'undefined';
-
-  if (typeof circular == 'undefined')
-    circular = true;
-
-  if (typeof depth == 'undefined')
-    depth = Infinity;
-
-  // recurse this function so we don't reset allParents and allChildren
-  function _clone(parent, depth) {
-    // cloning null always returns null
-    if (parent === null)
-      return null;
-
-    if (depth == 0)
-      return parent;
-
-    var child;
-    var proto;
-    if (typeof parent != 'object') {
-      return parent;
-    }
-
-    if (clone.__isArray(parent)) {
-      child = [];
-    } else if (clone.__isRegExp(parent)) {
-      child = new RegExp(parent.source, __getRegExpFlags(parent));
-      if (parent.lastIndex) child.lastIndex = parent.lastIndex;
-    } else if (clone.__isDate(parent)) {
-      child = new Date(parent.getTime());
-    } else if (useBuffer && Buffer.isBuffer(parent)) {
-      child = new Buffer(parent.length);
-      parent.copy(child);
-      return child;
-    } else {
-      if (typeof prototype == 'undefined') {
-        proto = Object.getPrototypeOf(parent);
-        child = Object.create(proto);
-      }
-      else {
-        child = Object.create(prototype);
-        proto = prototype;
-      }
-    }
-
-    if (circular) {
-      var index = allParents.indexOf(parent);
-
-      if (index != -1) {
-        return allChildren[index];
-      }
-      allParents.push(parent);
-      allChildren.push(child);
-    }
-
-    for (var i in parent) {
-      var attrs;
-      if (proto) {
-        attrs = Object.getOwnPropertyDescriptor(proto, i);
-      }
-
-      if (attrs && attrs.set == null) {
-        continue;
-      }
-      child[i] = _clone(parent[i], depth - 1);
-    }
-
-    return child;
-  }
-
-  return _clone(parent, depth);
-}
-
-/**
- * Simple flat clone using prototype, accepts only objects, usefull for property
- * override on FLAT configuration object (no nested props).
- *
- * USE WITH CAUTION! This may not behave as you wish if you do not know how this
- * works.
- */
-clone.clonePrototype = function clonePrototype(parent) {
-  if (parent === null)
-    return null;
-
-  var c = function () {};
-  c.prototype = parent;
-  return new c();
-};
-
-// private utility functions
-
-function __objToStr(o) {
-  return Object.prototype.toString.call(o);
-};
-clone.__objToStr = __objToStr;
-
-function __isDate(o) {
-  return typeof o === 'object' && __objToStr(o) === '[object Date]';
-};
-clone.__isDate = __isDate;
-
-function __isArray(o) {
-  return typeof o === 'object' && __objToStr(o) === '[object Array]';
-};
-clone.__isArray = __isArray;
-
-function __isRegExp(o) {
-  return typeof o === 'object' && __objToStr(o) === '[object RegExp]';
-};
-clone.__isRegExp = __isRegExp;
-
-function __getRegExpFlags(re) {
-  var flags = '';
-  if (re.global) flags += 'g';
-  if (re.ignoreCase) flags += 'i';
-  if (re.multiline) flags += 'm';
-  return flags;
-};
-clone.__getRegExpFlags = __getRegExpFlags;
-
-return clone;
-})();
-
-if (typeof module === 'object' && module.exports) {
-  module.exports = clone;
-}
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":3}],30:[function(require,module,exports){
-(function (process,Buffer){
-'use strict';
-var Readable = require('stream').Readable;
-var util = require('util');
-
-/**
- * Turns a MediaStream object (from getUserMedia) into a Node.js Readable stream and converts the audio to Buffers
- *
- * @see https://developer.mozilla.org/en-US/docs/Web/API/Navigator/getUserMedia
- *
- * @param {MediaStream} stream https://developer.mozilla.org/en-US/docs/Web/API/MediaStream
- * @param {Object} [opts] options
- * @param {Number|null} [opts.bufferSize=null] https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
- * @constructor
- */
-function MicrophoneStream(stream, opts) {
-  // "It is recommended for authors to not specify this buffer size and allow the implementation to pick a good
-  // buffer size to balance between latency and audio quality."
-  // https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
-  // Possible values: null, 256, 512, 1024, 2048, 4096, 8192, 16384
-  var bufferSize = null;
-  opts = opts || {};
-
-  bufferSize = opts.bufferSize || bufferSize;
-
-  // We can only emit one channel's worth of audio, so only one input. (Who has multiple microphones anyways?)
-  var inputChannels = 1;
-
-  // we shouldn't need any output channels (going back to the browser), but chrome is buggy and won't give us any audio without one
-  var outputChannels = 1;
-
-  Readable.call(this, opts);
-
-  var self = this;
-  var recording = true;
-
-  /**
-   * Convert and emit the raw audio data
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/ScriptProcessorNode/onaudioprocess
-   * @param {AudioProcessingEvent} e https://developer.mozilla.org/en-US/docs/Web/API/AudioProcessingEvent
-   */
-  function recorderProcess(e) {
-    // onaudioprocess can be called at least once after we've stopped
-    if (recording) {
-      var raw = e.inputBuffer.getChannelData(0);
-
-      /**
-       * @event MicrophoneStream#raw
-       * @param {Float32Array} data raw audio data from browser - each sample is a number from -1 to 1
-       */
-      self.emit('raw', raw);
-
-      // Standard (non-object mode) Node.js streams only accepts Buffers or Strings
-      var nodebuffer = new Buffer(raw.buffer);
-
-      /**
-       * Emit the readable/data event with a node-style buffer.
-       * Note: this is essentially a new DataView on the same underlying ArrayBuffer.
-       * The raw audio data is not actually coppied or changed.
-       *
-       * @event MicrophoneStream#data
-       * @param {Buffer} chunk node-style buffer with audio data; buffers are essentially a Uint8Array
-       */
-      self.push(nodebuffer);
-    }
-  }
-
-  var context = new AudioContext();
-  var audioInput = context.createMediaStreamSource(stream);
-  var recorder = context.createScriptProcessor(bufferSize, inputChannels, outputChannels);
-
-  recorder.onaudioprocess = recorderProcess;
-
-  audioInput.connect(recorder);
-
-  // other half of workaround for chrome bugs
-  recorder.connect(context.destination);
-
-  this.stop = function() {
-    try {
-      stream.getTracks()[0].stop();
-    } catch (ex) {
-      // This fails in some older versions of chrome. Nothing we can do about it.
-    }
-    recorder.disconnect(0);
-    recording = false;
-    self.push(null);
-    self.emit('close');
-  };
-
-  process.nextTick(function() {
-    self.emit('format', {
-      channels: 1,
-      bitDepth: 32,
-      sampleRate: context.sampleRate,
-      signed: true,
-      float: true
-    });
-  });
-}
-util.inherits(MicrophoneStream, Readable);
-
-MicrophoneStream.prototype._read = function(/* bytes */) {
-  // no-op, (flow-control doesn't really work on sound)
-};
-
-/**
- * Converts a Buffer back into the raw Float32Array format that browsers use.
- * Note: this is just a new DataView for the same underlying buffer -
- * the actual audio data is not copied or changed here.
- *
- * @param {Buffer} chunk node-style buffer of audio data from a 'data' event or read() call
- * @return {Float32Array} raw 32-bit float data view of audio data
- */
-MicrophoneStream.toRaw = function toFloat32(chunk) {
-  return new Float32Array(chunk.buffer);
-};
-
-module.exports = MicrophoneStream;
-
-}).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":11,"buffer":3,"stream":25,"util":28}],31:[function(require,module,exports){
-/*!
- * object.pick <https://github.com/jonschlinkert/object.pick>
- *
- * Copyright (c) 2014-2015 Jon Schlinkert, contributors.
- * Licensed under the MIT License
- */
-
-'use strict';
-
-module.exports = function pick(obj, keys) {
-  var res = {};
-  var i = 0;
-
-  if (typeof obj !== 'object') {
-    return res;
-  }
-
-  if (typeof keys === 'string') {
-    if (keys in obj) {
-      res[keys] = obj[keys];
-    }
-    return res;
-  }
-
-  var len = keys.length;
-
-  while (len--) {
-    var key = keys[i++];
-    if (key in obj) {
-      res[key] = obj[key];
-    }
-  }
-  return res;
-};
-
-},{}],32:[function(require,module,exports){
-(function (global,Buffer){
-'use strict';
-
-var Readable = require('stream').Readable;
-// When required from browserify, Buffer is also an Uint8Array, which is important for ejson.
-var inherits = require('inherits');
-var FileReader = global.FileReader;
-var Uint8Array = global.Uint8Array;
-
-/**
- * Read W3C Blob & File objects as a Node stream.
- * @param {Blob} blob
- * @constructor
- */
-function ReadableBlobStream(blob, opts)
-{
-        if (!(this instanceof ReadableBlobStream)) {
-          return new ReadableBlobStream(blob, opts);
-        }
-
-        opts = opts || {};
-        opts.objectMode = false;
-        Readable.call(this, opts);
-
-        if (!blob)
-        {
-                throw Error('Missing argument "blob"');
-        }
-
-        if (typeof blob.slice !== 'function')
-        {
-                throw Error('Given argument "blob" is not really a Blob/File or your environment does not support .slice()');
-        }
-
-        if (!FileReader)
-        {
-                throw Error('Your environment does not support FileReader');
-        }
-
-        if (!Uint8Array)
-        {
-                throw Error('Your environment does not support Uint8Array');
-        }
-
-        this.totalSize = blob.size;
-        this._blob = blob;
-        this._nextByteStart = 0;
-}
-module.exports = ReadableBlobStream;
-inherits(ReadableBlobStream, Readable);
-
-function uint8ArrayToBuffer(buf)
-{
-        if (typeof Buffer._augment === 'function')
-        {
-                buf = Buffer._augment(buf);
-
-                if (!(buf instanceof Uint8Array))
-                {
-                        throw Error('Assertion error, buf should be an Uint8Array');
-                }
-        }
-        else
-        {
-                buf = new Buffer(buf);
-        }
-
-        return buf;
-}
-
-function bufferToUint8Array(buf)
-{
-        buf = new Uint8Array(buf);
-        if (typeof Buffer._augment === 'function')
-        {
-                buf = Buffer._augment(buf);
-                // buf is now both an Uint8Array and an Buffer
-        }
-
-        if (!(buf instanceof Uint8Array))  // this is the check ejson uses
-        {
-                // this is the check ejson uses
-                throw Error('Assertion error, buf should be an Uint8Array');
-        }
-
-        return buf;
-}
-
-ReadableBlobStream.prototype.read = function()
-{
-        var buf = ReadableBlobStream.super_.prototype.read.apply(this, arguments);
-
-        // make sure it is a Uint8Array in case browserify's Buffer
-        // stops using Uint8Array
-        if (Buffer.isBuffer(buf) && !(buf instanceof Uint8Array))
-        {
-                buf = bufferToUint8Array(buf);
-        }
-
-        return buf;
-};
-
-ReadableBlobStream.prototype._read = function(chunkSize)
-{
-        var size = this._blob.size;
-        var start, end;
-
-        start = this._nextByteStart;
-        end = Math.min(start + chunkSize, size); // exclusive
-        this._nextByteStart = end;
-
-        if (start >= this._blob.size)
-        {
-                return void this.push(null);
-        }
-
-        var chunk = this._blob.slice(start, end);
-        var reader = new FileReader();
-
-        reader.onload = function()
-        {
-                // reader.result is an ArrayBuffer
-                var buf = new Uint8Array(reader.result);
-                buf = uint8ArrayToBuffer(buf);
-
-                this.push(buf);
-        }.bind(this);
-
-        reader.onerror = function()
-        {
-                this.emit('error', reader.error);
-        }.bind(this);
-
-        reader.readAsArrayBuffer(chunk);
-};
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":3,"inherits":33,"stream":25}],33:[function(require,module,exports){
-arguments[4][8][0].apply(exports,arguments)
-},{"dup":8}],34:[function(require,module,exports){
+},{"./support/isBuffer":39,"_process":24,"inherits":13}],41:[function(require,module,exports){
 var _global = (function() { return this; })();
 var nativeWebSocket = _global.WebSocket || _global.MozWebSocket;
 var websocket_version = require('./version');
@@ -5621,29 +5998,57 @@ module.exports = {
     'version'      : websocket_version
 };
 
-},{"./version":35}],35:[function(require,module,exports){
+},{"./version":42}],42:[function(require,module,exports){
 module.exports = require('../package.json').version;
 
-},{"../package.json":36}],36:[function(require,module,exports){
+},{"../package.json":43}],43:[function(require,module,exports){
 module.exports={
-  "name": "websocket",
-  "description": "Websocket Client & Server Library implementing the WebSocket protocol as specified in RFC 6455.",
-  "keywords": [
-    "websocket",
-    "websockets",
-    "socket",
-    "networking",
-    "comet",
-    "push",
-    "RFC-6455",
-    "realtime",
-    "server",
-    "client"
+  "_args": [
+    [
+      "websocket@^1.0.22",
+      "/home/travis/build/watson-developer-cloud/speech-javascript-sdk"
+    ]
   ],
-  "author": {
-    "name": "Brian McKelvey",
+  "_from": "websocket@>=1.0.22 <2.0.0",
+  "_id": "websocket@1.0.22",
+  "_inCache": true,
+  "_installable": true,
+  "_location": "/websocket",
+  "_nodeVersion": "3.3.1",
+  "_npmUser": {
     "email": "brian@worlize.com",
+    "name": "theturtle32"
+  },
+  "_npmVersion": "2.14.3",
+  "_phantomChildren": {},
+  "_requested": {
+    "name": "websocket",
+    "raw": "websocket@^1.0.22",
+    "rawSpec": "^1.0.22",
+    "scope": null,
+    "spec": ">=1.0.22 <2.0.0",
+    "type": "range"
+  },
+  "_requiredBy": [
+    "/",
+    "/watson-developer-cloud"
+  ],
+  "_resolved": "https://registry.npmjs.org/websocket/-/websocket-1.0.22.tgz",
+  "_shasum": "8c33e3449f879aaf518297c9744cebf812b9e3d8",
+  "_shrinkwrap": null,
+  "_spec": "websocket@^1.0.22",
+  "_where": "/home/travis/build/watson-developer-cloud/speech-javascript-sdk",
+  "author": {
+    "email": "brian@worlize.com",
+    "name": "Brian McKelvey",
     "url": "https://www.worlize.com/"
+  },
+  "browser": "lib/browser.js",
+  "bugs": {
+    "url": "https://github.com/theturtle32/WebSocket-Node/issues"
+  },
+  "config": {
+    "verbose": false
   },
   "contributors": [
     {
@@ -5652,21 +6057,13 @@ module.exports={
       "url": "http://dev.sipdoc.net"
     }
   ],
-  "version": "1.0.22",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/theturtle32/WebSocket-Node.git"
-  },
-  "homepage": "https://github.com/theturtle32/WebSocket-Node",
-  "engines": {
-    "node": ">=0.8.0"
-  },
   "dependencies": {
     "debug": "~2.2.0",
     "nan": "~2.0.5",
     "typedarray-to-buffer": "~3.0.3",
     "yaeti": "~0.0.4"
   },
+  "description": "Websocket Client & Server Library implementing the WebSocket protocol as specified in RFC 6455.",
   "devDependencies": {
     "buffer-equal": "^0.0.1",
     "faucet": "^0.0.1",
@@ -5675,48 +6072,445 @@ module.exports={
     "jshint-stylish": "^1.0.2",
     "tape": "^4.0.1"
   },
-  "config": {
-    "verbose": false
-  },
-  "scripts": {
-    "install": "(node-gyp rebuild 2> builderror.log) || (exit 0)",
-    "test": "faucet test/unit",
-    "gulp": "gulp"
-  },
-  "main": "index",
   "directories": {
     "lib": "./lib"
   },
-  "browser": "lib/browser.js",
-  "license": "Apache-2.0",
+  "dist": {
+    "shasum": "8c33e3449f879aaf518297c9744cebf812b9e3d8",
+    "tarball": "http://registry.npmjs.org/websocket/-/websocket-1.0.22.tgz"
+  },
+  "engines": {
+    "node": ">=0.8.0"
+  },
   "gitHead": "19108bbfd7d94a5cd02dbff3495eafee9e901ca4",
-  "bugs": {
-    "url": "https://github.com/theturtle32/WebSocket-Node/issues"
-  },
-  "_id": "websocket@1.0.22",
-  "_shasum": "8c33e3449f879aaf518297c9744cebf812b9e3d8",
-  "_from": "websocket@*",
-  "_npmVersion": "2.14.3",
-  "_nodeVersion": "3.3.1",
-  "_npmUser": {
-    "name": "theturtle32",
-    "email": "brian@worlize.com"
-  },
+  "homepage": "https://github.com/theturtle32/WebSocket-Node",
+  "keywords": [
+    "RFC-6455",
+    "client",
+    "comet",
+    "networking",
+    "push",
+    "realtime",
+    "server",
+    "socket",
+    "websocket",
+    "websockets"
+  ],
+  "license": "Apache-2.0",
+  "main": "index",
   "maintainers": [
     {
       "name": "theturtle32",
       "email": "brian@worlize.com"
     }
   ],
-  "dist": {
-    "shasum": "8c33e3449f879aaf518297c9744cebf812b9e3d8",
-    "tarball": "http://registry.npmjs.org/websocket/-/websocket-1.0.22.tgz"
+  "name": "websocket",
+  "optionalDependencies": {},
+  "readme": "ERROR: No README data found!",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theturtle32/WebSocket-Node.git"
   },
-  "_resolved": "https://registry.npmjs.org/websocket/-/websocket-1.0.22.tgz",
-  "readme": "ERROR: No README data found!"
+  "scripts": {
+    "gulp": "gulp",
+    "install": "(node-gyp rebuild 2> builderror.log) || (exit 0)",
+    "test": "faucet test/unit"
+  },
+  "version": "1.0.22"
 }
 
-},{}],37:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
+(function(self) {
+  'use strict';
+
+  if (self.fetch) {
+    return
+  }
+
+  function normalizeName(name) {
+    if (typeof name !== 'string') {
+      name = String(name)
+    }
+    if (/[^a-z0-9\-#$%&'*+.\^_`|~]/i.test(name)) {
+      throw new TypeError('Invalid character in header field name')
+    }
+    return name.toLowerCase()
+  }
+
+  function normalizeValue(value) {
+    if (typeof value !== 'string') {
+      value = String(value)
+    }
+    return value
+  }
+
+  function Headers(headers) {
+    this.map = {}
+
+    if (headers instanceof Headers) {
+      headers.forEach(function(value, name) {
+        this.append(name, value)
+      }, this)
+
+    } else if (headers) {
+      Object.getOwnPropertyNames(headers).forEach(function(name) {
+        this.append(name, headers[name])
+      }, this)
+    }
+  }
+
+  Headers.prototype.append = function(name, value) {
+    name = normalizeName(name)
+    value = normalizeValue(value)
+    var list = this.map[name]
+    if (!list) {
+      list = []
+      this.map[name] = list
+    }
+    list.push(value)
+  }
+
+  Headers.prototype['delete'] = function(name) {
+    delete this.map[normalizeName(name)]
+  }
+
+  Headers.prototype.get = function(name) {
+    var values = this.map[normalizeName(name)]
+    return values ? values[0] : null
+  }
+
+  Headers.prototype.getAll = function(name) {
+    return this.map[normalizeName(name)] || []
+  }
+
+  Headers.prototype.has = function(name) {
+    return this.map.hasOwnProperty(normalizeName(name))
+  }
+
+  Headers.prototype.set = function(name, value) {
+    this.map[normalizeName(name)] = [normalizeValue(value)]
+  }
+
+  Headers.prototype.forEach = function(callback, thisArg) {
+    Object.getOwnPropertyNames(this.map).forEach(function(name) {
+      this.map[name].forEach(function(value) {
+        callback.call(thisArg, value, name, this)
+      }, this)
+    }, this)
+  }
+
+  function consumed(body) {
+    if (body.bodyUsed) {
+      return Promise.reject(new TypeError('Already read'))
+    }
+    body.bodyUsed = true
+  }
+
+  function fileReaderReady(reader) {
+    return new Promise(function(resolve, reject) {
+      reader.onload = function() {
+        resolve(reader.result)
+      }
+      reader.onerror = function() {
+        reject(reader.error)
+      }
+    })
+  }
+
+  function readBlobAsArrayBuffer(blob) {
+    var reader = new FileReader()
+    reader.readAsArrayBuffer(blob)
+    return fileReaderReady(reader)
+  }
+
+  function readBlobAsText(blob) {
+    var reader = new FileReader()
+    reader.readAsText(blob)
+    return fileReaderReady(reader)
+  }
+
+  var support = {
+    blob: 'FileReader' in self && 'Blob' in self && (function() {
+      try {
+        new Blob();
+        return true
+      } catch(e) {
+        return false
+      }
+    })(),
+    formData: 'FormData' in self,
+    arrayBuffer: 'ArrayBuffer' in self
+  }
+
+  function Body() {
+    this.bodyUsed = false
+
+
+    this._initBody = function(body) {
+      this._bodyInit = body
+      if (typeof body === 'string') {
+        this._bodyText = body
+      } else if (support.blob && Blob.prototype.isPrototypeOf(body)) {
+        this._bodyBlob = body
+      } else if (support.formData && FormData.prototype.isPrototypeOf(body)) {
+        this._bodyFormData = body
+      } else if (!body) {
+        this._bodyText = ''
+      } else if (support.arrayBuffer && ArrayBuffer.prototype.isPrototypeOf(body)) {
+        // Only support ArrayBuffers for POST method.
+        // Receiving ArrayBuffers happens via Blobs, instead.
+      } else {
+        throw new Error('unsupported BodyInit type')
+      }
+
+      if (!this.headers.get('content-type')) {
+        if (typeof body === 'string') {
+          this.headers.set('content-type', 'text/plain;charset=UTF-8')
+        } else if (this._bodyBlob && this._bodyBlob.type) {
+          this.headers.set('content-type', this._bodyBlob.type)
+        }
+      }
+    }
+
+    if (support.blob) {
+      this.blob = function() {
+        var rejected = consumed(this)
+        if (rejected) {
+          return rejected
+        }
+
+        if (this._bodyBlob) {
+          return Promise.resolve(this._bodyBlob)
+        } else if (this._bodyFormData) {
+          throw new Error('could not read FormData body as blob')
+        } else {
+          return Promise.resolve(new Blob([this._bodyText]))
+        }
+      }
+
+      this.arrayBuffer = function() {
+        return this.blob().then(readBlobAsArrayBuffer)
+      }
+
+      this.text = function() {
+        var rejected = consumed(this)
+        if (rejected) {
+          return rejected
+        }
+
+        if (this._bodyBlob) {
+          return readBlobAsText(this._bodyBlob)
+        } else if (this._bodyFormData) {
+          throw new Error('could not read FormData body as text')
+        } else {
+          return Promise.resolve(this._bodyText)
+        }
+      }
+    } else {
+      this.text = function() {
+        var rejected = consumed(this)
+        return rejected ? rejected : Promise.resolve(this._bodyText)
+      }
+    }
+
+    if (support.formData) {
+      this.formData = function() {
+        return this.text().then(decode)
+      }
+    }
+
+    this.json = function() {
+      return this.text().then(JSON.parse)
+    }
+
+    return this
+  }
+
+  // HTTP methods whose capitalization should be normalized
+  var methods = ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT']
+
+  function normalizeMethod(method) {
+    var upcased = method.toUpperCase()
+    return (methods.indexOf(upcased) > -1) ? upcased : method
+  }
+
+  function Request(input, options) {
+    options = options || {}
+    var body = options.body
+    if (Request.prototype.isPrototypeOf(input)) {
+      if (input.bodyUsed) {
+        throw new TypeError('Already read')
+      }
+      this.url = input.url
+      this.credentials = input.credentials
+      if (!options.headers) {
+        this.headers = new Headers(input.headers)
+      }
+      this.method = input.method
+      this.mode = input.mode
+      if (!body) {
+        body = input._bodyInit
+        input.bodyUsed = true
+      }
+    } else {
+      this.url = input
+    }
+
+    this.credentials = options.credentials || this.credentials || 'omit'
+    if (options.headers || !this.headers) {
+      this.headers = new Headers(options.headers)
+    }
+    this.method = normalizeMethod(options.method || this.method || 'GET')
+    this.mode = options.mode || this.mode || null
+    this.referrer = null
+
+    if ((this.method === 'GET' || this.method === 'HEAD') && body) {
+      throw new TypeError('Body not allowed for GET or HEAD requests')
+    }
+    this._initBody(body)
+  }
+
+  Request.prototype.clone = function() {
+    return new Request(this)
+  }
+
+  function decode(body) {
+    var form = new FormData()
+    body.trim().split('&').forEach(function(bytes) {
+      if (bytes) {
+        var split = bytes.split('=')
+        var name = split.shift().replace(/\+/g, ' ')
+        var value = split.join('=').replace(/\+/g, ' ')
+        form.append(decodeURIComponent(name), decodeURIComponent(value))
+      }
+    })
+    return form
+  }
+
+  function headers(xhr) {
+    var head = new Headers()
+    var pairs = xhr.getAllResponseHeaders().trim().split('\n')
+    pairs.forEach(function(header) {
+      var split = header.trim().split(':')
+      var key = split.shift().trim()
+      var value = split.join(':').trim()
+      head.append(key, value)
+    })
+    return head
+  }
+
+  Body.call(Request.prototype)
+
+  function Response(bodyInit, options) {
+    if (!options) {
+      options = {}
+    }
+
+    this.type = 'default'
+    this.status = options.status
+    this.ok = this.status >= 200 && this.status < 300
+    this.statusText = options.statusText
+    this.headers = options.headers instanceof Headers ? options.headers : new Headers(options.headers)
+    this.url = options.url || ''
+    this._initBody(bodyInit)
+  }
+
+  Body.call(Response.prototype)
+
+  Response.prototype.clone = function() {
+    return new Response(this._bodyInit, {
+      status: this.status,
+      statusText: this.statusText,
+      headers: new Headers(this.headers),
+      url: this.url
+    })
+  }
+
+  Response.error = function() {
+    var response = new Response(null, {status: 0, statusText: ''})
+    response.type = 'error'
+    return response
+  }
+
+  var redirectStatuses = [301, 302, 303, 307, 308]
+
+  Response.redirect = function(url, status) {
+    if (redirectStatuses.indexOf(status) === -1) {
+      throw new RangeError('Invalid status code')
+    }
+
+    return new Response(null, {status: status, headers: {location: url}})
+  }
+
+  self.Headers = Headers;
+  self.Request = Request;
+  self.Response = Response;
+
+  self.fetch = function(input, init) {
+    return new Promise(function(resolve, reject) {
+      var request
+      if (Request.prototype.isPrototypeOf(input) && !init) {
+        request = input
+      } else {
+        request = new Request(input, init)
+      }
+
+      var xhr = new XMLHttpRequest()
+
+      function responseURL() {
+        if ('responseURL' in xhr) {
+          return xhr.responseURL
+        }
+
+        // Avoid security warnings on getResponseHeader when not allowed by CORS
+        if (/^X-Request-URL:/m.test(xhr.getAllResponseHeaders())) {
+          return xhr.getResponseHeader('X-Request-URL')
+        }
+
+        return;
+      }
+
+      xhr.onload = function() {
+        var status = (xhr.status === 1223) ? 204 : xhr.status
+        if (status < 100 || status > 599) {
+          reject(new TypeError('Network request failed'))
+          return
+        }
+        var options = {
+          status: status,
+          statusText: xhr.statusText,
+          headers: headers(xhr),
+          url: responseURL()
+        }
+        var body = 'response' in xhr ? xhr.response : xhr.responseText;
+        resolve(new Response(body, options))
+      }
+
+      xhr.onerror = function() {
+        reject(new TypeError('Network request failed'))
+      }
+
+      xhr.open(request.method, request.url, true)
+
+      if (request.credentials === 'include') {
+        xhr.withCredentials = true
+      }
+
+      if ('responseType' in xhr && support.blob) {
+        xhr.responseType = 'blob'
+      }
+
+      request.headers.forEach(function(value, name) {
+        xhr.setRequestHeader(name, value)
+      })
+
+      xhr.send(typeof request._bodyInit === 'undefined' ? null : request._bodyInit)
+    })
+  }
+  self.fetch.polyfill = true
+})(typeof self !== 'undefined' ? self : this);
+
+},{}],45:[function(require,module,exports){
 'use strict';
 
 // these are the only content-types currently supported by the speech-to-tet service
@@ -5736,7 +6530,7 @@ module.exports = function contentType(header) {
   return contentTypes[header];
 };
 
-},{}],38:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 'use strict';
 
 var contentType = require('./content-type');
@@ -5760,10 +6554,10 @@ function getContentType(file) {
 }
 
 function FilePlayer(file, contentType) {
-  var output = new Audio();
-  if (output.canPlayType(contentType)) {
-    output.src = URL.createObjectURL(new Blob([file], {type: contentType}));
-    output.play();
+  var audio = this.audio = new Audio();
+  if (audio.canPlayType(contentType)) {
+    audio.src = URL.createObjectURL(new Blob([file], {type: contentType}));
+    audio.play();
   } else {
     // if we emit an error, it prevents the promise from returning the actual result
     // however, most browsers do not support flac, so this is a reasonably scenario
@@ -5773,8 +6567,8 @@ function FilePlayer(file, contentType) {
     throw err;
   }
   this.stop = function stop() {
-    output.pause();
-    output.currentTime = 0;
+    audio.pause();
+    audio.currentTime = 0;
   }
 }
 
@@ -5788,12 +6582,13 @@ module.exports = FilePlayer;
 module.exports.getContentType = getContentType;
 module.exports.playFile = playFile;
 
-},{"./content-type":37}],39:[function(require,module,exports){
+},{"./content-type":45}],47:[function(require,module,exports){
 'use strict';
 
 var Transform = require('stream').Transform;
 var util = require('util');
 var clone = require('clone');
+var defaults = require('defaults');
 
 /**
  * Applies some basic formating to transcriptions:
@@ -5805,25 +6600,19 @@ var clone = require('clone');
  * @param opts
  * @param opts.model - some models / languages need special handling
  * @param [opts.hesitation='\u2026'] - what to put down for a "hesitation" event, defaults to an ellipsis (...)
+ * @param {Boolean} [options.objectMode=false] - emit `result` objects instead of string Buffers for the `data` events.
  * @constructor
  */
 function FormatStream(opts) {
-  this.opts = util._extend({
+  this.options = defaults(opts, {
     model: '', // some models should have all spaces removed
     hesitation: '\u2026', // ellipsis
     decodeStrings: true
-  }, opts);
+  });
   Transform.call(this, opts);
 
-  this.isJaCn = ((this.opts.model.substring(0,5) === 'ja-JP') || (this.opts.model.substring(0,5) === 'zh-CN'));
-
-  var self = this;
-  this.on('pipe', function(source) {
-    source.on('result', self.handleResult.bind(self));
-    if(source.stop) {
-      self.stop = source.stop.bind(source);
-    }
-  });
+  this.isJaCn = ((this.options.model.substring(0,5) === 'ja-JP') || (this.options.model.substring(0,5) === 'zh-CN'));
+  this._transform = opts.objectMode ? this.formatResult : this.formatString;
 }
 util.inherits(FormatStream, Transform);
 
@@ -5839,7 +6628,7 @@ var reDUnderscoreWords = /D_[^\s]+/g; // replace D_(anything)
  */
 FormatStream.prototype.clean = function clean(text) {
   // clean out "junk"
-  text = text.trim().replace(reHesitation, this.opts.hesitation)
+  text = text.trim().replace(reHesitation, this.options.hesitation)
     .replace(reRepeatedCharacter, '')
     .replace(reDUnderscoreWords,'');
 
@@ -5875,7 +6664,7 @@ FormatStream.prototype.period = function period(text) {
   return text + (this.isJaCn ? '。' : '. ')
 };
 
-FormatStream.prototype._transform = function(chunk, encoding, next) {
+FormatStream.prototype.formatString = function(chunk, encoding, next) {
   this.push(this.period(this.capitalize(this.clean(chunk.toString()))));
   next();
 };
@@ -5885,7 +6674,7 @@ FormatStream.prototype._transform = function(chunk, encoding, next) {
  *
  * @param result
  */
-FormatStream.prototype.handleResult = function handleResult(result) {
+FormatStream.prototype.formatResult = function formatResult(result, encoding, next) {
   result = clone(result);
   result.alternatives = result.alternatives.map(function(alt) {
     alt.transcript = this.capitalize(this.clean(alt.transcript));
@@ -5908,16 +6697,15 @@ FormatStream.prototype.handleResult = function handleResult(result) {
     }
     return alt;
   }, this);
-  this.emit('result', result);
+  this.push(result);
+  next();
 };
 
-FormatStream.prototype.promise = require('./promise');
-
-FormatStream.prototype.stop = function(){}; // usually overwritten during the `pipe` event
+FormatStream.prototype.promise = require('./to-promise');
 
 module.exports = FormatStream;
 
-},{"./promise":43,"clone":29,"stream":25,"util":28}],40:[function(require,module,exports){
+},{"./to-promise":56,"clone":6,"defaults":8,"stream":36,"util":40}],48:[function(require,module,exports){
 'use strict';
 
 module.exports = function getUserMedia(constraints) {
@@ -5925,6 +6713,7 @@ module.exports = function getUserMedia(constraints) {
   if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     return navigator.mediaDevices.getUserMedia(constraints);
   }
+  // todo: return a fake promise if window.Promise is undefined
   return new Promise(function(resolve, reject) {
     var gum = navigator.getUserMedia || navigator.webkitGetUserMedia ||  navigator.mozGetUserMedia || navigator.msGetUserMedia;
     if (!gum) {
@@ -5936,7 +6725,7 @@ module.exports = function getUserMedia(constraints) {
   });
 };
 
-},{}],41:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 (function (Buffer){
 'use strict';
 
@@ -5947,7 +6736,7 @@ module.exports = {
   recognizeElement: require('./recognize-element'),
 
   // individual components to build more customized solutions
-  WebAudioWavStream: require('./webaudio-wav-stream'),
+  WebAudioL16Stream: require('./webaudio-l16-stream'),
   MediaElementAudioStream: require('./media-element-audio-stream'),
   RecognizeStream: require('./recognize-stream'),
   FilePlayer: require('./file-player'),
@@ -5955,17 +6744,18 @@ module.exports = {
   FormatStream: require('./format-stream'),
   TimingStream: require('./timing-stream'),
 
-  // external (provided here to allow the lib to be used standalone w/out browserify)
+  // external components provided here to allow the lib to be used standalone (w/out browserify)
   MicrophoneStream: require('microphone-stream'),
-  Buffer: Buffer // may be needed to send data to the streams
+  Buffer: Buffer
 };
 
 }).call(this,require("buffer").Buffer)
-},{"./file-player":38,"./format-stream":39,"./getusermedia":40,"./media-element-audio-stream":42,"./recognize-blob":44,"./recognize-element":45,"./recognize-microphone":46,"./recognize-stream":47,"./timing-stream":48,"./webaudio-wav-stream":49,"buffer":3,"microphone-stream":30}],42:[function(require,module,exports){
+},{"./file-player":46,"./format-stream":47,"./getusermedia":48,"./media-element-audio-stream":50,"./recognize-blob":51,"./recognize-element":52,"./recognize-microphone":53,"./recognize-stream":54,"./timing-stream":55,"./webaudio-l16-stream":57,"buffer":4,"microphone-stream":16}],50:[function(require,module,exports){
 (function (process,Buffer){
 'use strict';
 var Readable = require('stream').Readable;
 var util = require('util');
+var defaults = require('defaults');
 
 /**
  * Turns a MediaStream object (from getUserMedia) into a Node.js Readable stream and converts the audio to Buffers
@@ -5976,20 +6766,25 @@ var util = require('util');
  * @param {Object} [opts] options
  * @param {Number|null} [opts.bufferSize=null] https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
  * @param {Boolean} [opts.muteSource=false] - If true, the audio will not be sent back to the source
+ *
+ * // todo: add option for whether to keep or destroy the context
+ *
  * @constructor
  */
 function MediaElementAudioStream(source, opts) {
 
-  opts = util._extend({
+  opts = defaults(opts, {
     // "It is recommended for authors to not specify this buffer size and allow the implementation to pick a good
     // buffer size to balance between latency and audio quality."
     // https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
     // Possible values: null, 256, 512, 1024, 2048, 4096, 8192, 16384
-    bufferSize:null,
+    // however, webkitAudioContext (safari) requires it to be set
+    bufferSize: (typeof AudioContext != "undefined" ? null : 4096),
     muteSource: false,
-    autoplay: true,
-    crossOrigin: "anonymous" // required for cross-domain audio playback
-  }, opts);
+    autoPlay: true,
+    crossOrigin: "anonymous", // required for cross-domain audio playback
+    objectMode: true // true = emit AudioBuffers w/ audio + some metadata, false = emite node.js Buffers (with binary data only
+  });
 
   // We can only emit one channel's worth of audio, so only one input. (Who has multiple microphones anyways?)
   var inputChannels = 1;
@@ -6002,8 +6797,8 @@ function MediaElementAudioStream(source, opts) {
   var self = this;
   var recording = true;
 
-  // I can't seem to find any documentation for this on <audio> elements, but it seems to be required for cross-domain usage (in addition to CORS headers)
-  //source.crossOrigin = opts.crossOrigin;
+  // I can't find much documentation for this for <audio> elements, but it seems to be required for cross-domain usage (in addition to CORS headers)
+  source.crossOrigin = opts.crossOrigin;
 
   /**
    * Convert and emit the raw audio data
@@ -6013,32 +6808,15 @@ function MediaElementAudioStream(source, opts) {
   function processAudio(e) {
     // onaudioprocess can be called at least once after we've stopped
     if (recording) {
-
-      var raw = e.inputBuffer.getChannelData(0);
-
-      /**
-       * @event MicrophoneStream#raw
-       * @param {Float32Array} data raw audio data from browser - each sample is a number from -1 to 1
-       */
-      self.emit('raw', raw);
-
-      // Standard (non-object mode) Node.js streams only accepts Buffers or Strings
-      var nodebuffer = new Buffer(raw.buffer);
-
-      /**
-       * Emit the readable/data event with a node-style buffer.
-       * Note: this is essentially a new DataView on the same underlying ArrayBuffer.
-       * The raw audio data is not actually coppied or changed.
-       *
-       * @event MicrophoneStream#data
-       * @param {Buffer} chunk node-style buffer with audio data; buffers are essentially a Uint8Array
-       */
-      self.push(nodebuffer);
+      // todo: interleave channels in binary mode
+      self.push( opts.objectMode ? e.inputBuffer : new Buffer(e.inputBuffer.getChannelData(0)) );
     }
   }
 
-  var context = new AudioContext();
-  var audioInput = context.createMediaElementSource(source);
+  var AudioContext = window.AudioContext || window.webkitAudioContext;
+  // cache the source node & context since it's not possible to recreate it later
+  var context = source.context = source.context || new AudioContext();
+  var audioInput = source.node  = source.node || context.createMediaElementSource(source);
   var scriptProcessor = context.createScriptProcessor(opts.bufferSize, inputChannels, outputChannels);
 
   scriptProcessor.onaudioprocess = processAudio;
@@ -6049,23 +6827,40 @@ function MediaElementAudioStream(source, opts) {
     gain.connect(context.destination);
   }
 
-  audioInput.connect(scriptProcessor);
-
-  // other half of workaround for chrome bugs
-  scriptProcessor.connect(context.destination);
+  /**
+   * Setup script processor to extract audio and also re-connect it via a no-op gain node if desired
+   *
+   * Delayed to avoid processing the stream of silence received before the file begins playing
+   *
+   */
+  function connect() {
+    audioInput.connect(scriptProcessor);
+    // other half of workaround for chrome bugs
+    scriptProcessor.connect(context.destination);
+    source.removeEventListener("playing", connect);
+  }
+  source.addEventListener("playing", connect);
 
   // https://developer.mozilla.org/en-US/docs/Web/Guide/Events/Media_events
+  // https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/readyState
   function start() {
     source.play();
     source.removeEventListener("canplaythrough", start);
   }
-  if (opts.autoplay) {
-    source.addEventListener("canplaythrough", start);
+  if (opts.autoPlay) {
+    // play immediately if we have enough data, otherwise wait for the canplaythrough event
+    if(source.readyState === source.HAVE_ENOUGH_DATA) {
+      source.play();
+    } else {
+      source.addEventListener("canplaythrough", start);
+    }
   }
 
   function end() {
     recording = false;
     scriptProcessor.disconnect();
+    audioInput.disconnect();
+    //context.close(); // this prevents us from re-using the same audio element until the page is refreshed
     self.push(null);
     self.emit('close');
   }
@@ -6079,6 +6874,7 @@ function MediaElementAudioStream(source, opts) {
   source.addEventListener("error", this.emit.bind(this, 'error'));
 
   process.nextTick(function() {
+    // this is more useful for binary mode than object mode, but it won't hurt either way
     self.emit('format', {
       channels: 1,
       bitDepth: 32,
@@ -6110,29 +6906,7 @@ MediaElementAudioStream.toRaw = function toFloat32(chunk) {
 module.exports = MediaElementAudioStream;
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":11,"buffer":3,"stream":25,"util":28}],43:[function(require,module,exports){
-'use strict';
-
-/**
- * Helper method that can be bound to a stream - it sets the output to utf-8, captures all of the results, and returns a promise that resolves to the final text.
- * Essentially a smaller version of concat-stream wrapped in a promise
- *
- * @param [stream=] optional stream param for when not bound to an existing stream instance
- */
-module.exports = function promise(stream) {
-  stream = stream || this;
-  return new Promise(function (resolve, reject) {
-    var results = [];
-    stream.setEncoding('utf8')
-    .on('data', function (result) {
-      results.push(result);
-    }).on('end', function () {
-      resolve(results.join(''));
-    }).on('error', reject);
-  });
-};
-
-},{}],44:[function(require,module,exports){
+},{"_process":24,"buffer":4,"defaults":8,"stream":36,"util":40}],51:[function(require,module,exports){
 /**
  * Copyright 2015 IBM Corp. All Rights Reserved.
  *
@@ -6150,9 +6924,12 @@ module.exports = function promise(stream) {
  */
 
 'use strict';
-var ReadableBlobStream = require('readable-blob-stream');
+var BlobStream = require('readable-blob-stream');
 var RecognizeStream = require('./recognize-stream.js');
 var FilePlayer = require('./file-player.js');
+var FormatStream = require('./format-stream.js');
+var TimingStream = require('./timing-stream.js');
+var assign = require('object.assign/polyfill')();
 
 
 /**
@@ -6162,7 +6939,9 @@ var FilePlayer = require('./file-player.js');
  * @param {Object} options - Also passed to {MediaElementAudioStream} and to {RecognizeStream}
  * @param {String} options.token - Auth Token - see https://github.com/watson-developer-cloud/node-sdk#authorization
  * @param {Blob|File} options.data - the raw audio data as a Blob or File instance
- * @param {Boolean} [options.play=true] - If a file is set, play it locally as it's being uploaded
+ * @param {Boolean} [options.play=false] - If a file is set, play it locally as it's being uploaded
+ * @param {Boolena} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
+ * @param {Boolena} [options.realtime=options.play] - pipe the text through a {TimingStream} which slows the output down to real-time to match the audio playback.
  *
  * @returns {RecognizeStream}
  */
@@ -6171,9 +6950,27 @@ module.exports = function recognizeBlob(options) {
     throw new Error("WatsonSpeechToText: missing required parameter: opts.token");
   }
 
-  var recognizeStream  = new RecognizeStream(options);
+  var realtime = options.realtime || typeof options.realtime === 'undefined' && options.play;
 
-  if (options.playFile) {
+  // we don't want the readable stream to have objectMode on the input even if we're setting it for the output
+  // unless were in realtime mode - in which case the timing stream requires objectMode input.
+  var rsOpts = assign({}, options);
+  rsOpts.readableObjectMode = options.objectMode || realtime;
+  delete rsOpts.objectMode;
+
+
+  var recognizeStream = new RecognizeStream(rsOpts);
+  var stream = new BlobStream(options.data).pipe(recognizeStream);
+
+  if (options.format !== false) {
+    stream = stream.pipe(new FormatStream(options));
+  }
+  if (realtime) {
+    stream = stream.pipe(new TimingStream(options));
+  }
+  stream.stop = recognizeStream.stop.bind(recognizeStream);
+
+  if (options.play) {
     FilePlayer.playFile(options.data).then(function (player) {
       recognizeStream.on('stop', player.stop.bind(player));
     }).catch(function (err) {
@@ -6181,12 +6978,12 @@ module.exports = function recognizeBlob(options) {
     });
   }
 
-  return new ReadableBlobStream(options.data).pipe(recognizeStream);
+  return stream;
 };
 
 
 
-},{"./file-player.js":38,"./recognize-stream.js":47,"readable-blob-stream":32}],45:[function(require,module,exports){
+},{"./file-player.js":46,"./format-stream.js":47,"./recognize-stream.js":54,"./timing-stream.js":55,"object.assign/polyfill":21,"readable-blob-stream":25}],52:[function(require,module,exports){
 /**
  * Copyright 2015 IBM Corp. All Rights Reserved.
  *
@@ -6205,8 +7002,10 @@ module.exports = function recognizeBlob(options) {
 
 'use strict';
 var MediaElementAudioStream = require('./media-element-audio-stream');
-var WebAudioTo16leStream = require('./webaudio-wav-stream');
+var L16 = require('./webaudio-l16-stream');
 var RecognizeStream = require('./recognize-stream.js');
+var FormatStream = require('./format-stream.js');
+var assign = require('object.assign/polyfill')();
 
 /**
  * Recognize audio from a <audio> or <video> element
@@ -6214,6 +7013,7 @@ var RecognizeStream = require('./recognize-stream.js');
  * @param {Object} options - Also passed to {MediaElementAudioStream} and to {RecognizeStream}
  * @param {String} options.token - Auth Token - see https://github.com/watson-developer-cloud/node-sdk#authorization
  * @param {MediaElement} options.element - the <video> or <audio> element to play
+ * @param {Boolena} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
  *
  * @returns {RecognizeStream}
  */
@@ -6222,21 +7022,36 @@ module.exports = function recognizeElement(options) {
     throw new Error("WatsonSpeechToText: missing required parameter: opts.token");
   }
 
-  //options['content-type'] = 'audio/l16;rate=16000';
-  var recognizeStream = new RecognizeStream(options);
+  // we don't want the readable stream to have objectMode on the input even if we're setting it for the output
+  var rsOpts = assign({}, options);
+  rsOpts.readableObjectMode = options.objectMode;
+  rsOpts['content-type'] = 'audio/l16;rate=16000';
+  delete rsOpts.objectMode;
 
-  var sourceStream = new MediaElementAudioStream(options.element , options);
+  var recognizeStream = new RecognizeStream(rsOpts);
 
-  sourceStream
-    .pipe(new WebAudioTo16leStream())
+  var sourceStream = new MediaElementAudioStream(options.element , {
+    objectMode: true,
+    bufferSize: options.bufferSize,
+    muteSource: options.muteSource,
+    autoPlay: options.autoPlay !== false // default to true if it's undefined
+  });
+
+  var stream = sourceStream
+    .pipe(new L16({writableObjectMode: true}))
     .pipe(recognizeStream);
+
+  if (options.format !== false) {
+    stream = stream.pipe(new FormatStream(options));
+    stream.stop = recognizeStream.stop.bind(recognizeStream);
+  }
 
   recognizeStream.on('stop', sourceStream.stop.bind(sourceStream));
 
-  return recognizeStream;
+  return stream;
 };
 
-},{"./media-element-audio-stream":42,"./recognize-stream.js":47,"./webaudio-wav-stream":49}],46:[function(require,module,exports){
+},{"./format-stream.js":47,"./media-element-audio-stream":50,"./recognize-stream.js":54,"./webaudio-l16-stream":57,"object.assign/polyfill":21}],53:[function(require,module,exports){
 'use strict';
 
 /**
@@ -6259,8 +7074,9 @@ module.exports = function recognizeElement(options) {
 var getUserMedia = require('./getusermedia');
 var MicrophoneStream = require('microphone-stream');
 var RecognizeStream = require('./recognize-stream.js');
-var WebAudioTo16leStream = require('./webaudio-wav-stream.js');
-
+var L16 = require('./webaudio-l16-stream.js');
+var FormatStream = require('./format-stream.js');
+var assign = require('object.assign/polyfill')();
 
 /**
  * Create and return a RecognizeStream from the user's microphone
@@ -6268,6 +7084,7 @@ var WebAudioTo16leStream = require('./webaudio-wav-stream.js');
  *
  * @param {Object} options - Also passed to {MediaElementAudioStream} and to {RecognizeStream}
  * @param {String} options.token - Auth Token - see https://github.com/watson-developer-cloud/node-sdk#authorization
+ * @param {Boolena} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
  *
  * @returns {RecognizeStream}
  */
@@ -6276,24 +7093,40 @@ module.exports = function recognizeMicrophone(options) {
     throw new Error("WatsonSpeechToText: missing required parameter: opts.token");
   }
 
-  //options['content-type'] = 'audio/l16;rate=16000';
-  var recognizeStream = new RecognizeStream(options);
+  // we don't want the readable stream to have objectMode on the input even if we're setting it for the output
+  var rsOpts = assign({}, options);
+  rsOpts.readableObjectMode = options.objectMode;
+  rsOpts['content-type'] = 'audio/l16;rate=16000';
+  delete rsOpts.objectMode;
+
+  var recognizeStream = new RecognizeStream(rsOpts);
+
 
   getUserMedia({video: false, audio: true}).then(function(mic) {
-    var micStream = new MicrophoneStream(mic, options);
+    var micStream = new MicrophoneStream(mic, {
+      objectMode: true,
+      bufferSize: options.bufferSize
+    });
     micStream
-      .pipe(new WebAudioTo16leStream())
+      .pipe(new L16({writableObjectMode: true}))
       .pipe(recognizeStream);
 
     recognizeStream.on('stop', micStream.stop.bind(micStream));
   }).catch(recognizeStream.emit.bind(recognizeStream, 'error'));
 
-  return recognizeStream;
+
+  var stream = recognizeStream;
+  if (options.format !== false) {
+    stream = stream.pipe(new FormatStream(options));
+    stream.stop = recognizeStream.stop.bind(recognizeStream);
+  }
+
+  return stream;
 };
 
 
 
-},{"./getusermedia":40,"./recognize-stream.js":47,"./webaudio-wav-stream.js":49,"microphone-stream":30}],47:[function(require,module,exports){
+},{"./format-stream.js":47,"./getusermedia":48,"./recognize-stream.js":54,"./webaudio-l16-stream.js":57,"microphone-stream":16,"object.assign/polyfill":21}],54:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014 IBM Corp. All Rights Reserved.
@@ -6319,6 +7152,8 @@ var util = require('util');
 var pick = require('object.pick');
 var W3CWebSocket = require('websocket').w3cwebsocket;
 var contentType = require('./content-type');
+var defaults = require('defaults');
+var qs = require('../util/querystring.js');
 
 
 var OPENING_MESSAGE_PARAMS_ALLOWED = ['continuous', 'max_alternatives', 'timestamps', 'word_confidence', 'inactivity_timeout',
@@ -6337,14 +7172,16 @@ var QUERY_PARAMS_ALLOWED = ['model', 'watson-token']; //, 'X-Watson-Learning-Opt
  * @param options
  * @param {String} [options.model='en-US_BroadbandModel'] - voice model to use. Microphone streaming only supports broadband models.
  * @param {String} [options.url='wss://stream.watsonplatform.net/speech-to-text/api'] base URL for service
- * @param {String} [options.content-type='audio/wav'] - content type of audio; should be automatically determined in most cases
- * @param {Boolean} [options.interim_results=true] - Send back non-final previews of each "sentence" as it is being processed
+ * @param {String} [options.content-type='audio/wav'] - content type of audio; can be automatically determined from file header in most cases. only wav, flac, and ogg/opus are supported
+ * @param {Boolean} [options.interim_results=false] - Send back non-final previews of each "sentence" as it is being processed. Defaults to true when in objectMode.
  * @param {Boolean} [options.continuous=true] - set to false to automatically stop the transcription after the first "sentence"
- * @param {Boolean} [options.word_confidence=true] - include confidence scores with results
- * @param {Boolean} [options.timestamps=true] - include timestamps with results
- * @param {Number} [options.max_alternatives=3] - maximum number of alternative transcriptions to include
+ * @param {Boolean} [options.word_confidence=false] - include confidence scores with results. Defaults to true when in objectMode.
+ * @param {Boolean} [options.timestamps=false] - include timestamps with results. Defaults to true when in objectMode.
+ * @param {Number} [options.max_alternatives=1] - maximum number of alternative transcriptions to include. Defaults to 3 when in objectMode.
  * @param {Number} [options.inactivity_timeout=30] - how many seconds of silence before automatically closing the stream (even if continuous is true). use -1 for infinity
-
+ * @param {Boolean} [options.readableObjectMode=false] - emit `result` objects instead of string Buffers for the `data` events. Changes several other defaults.
+ * @param {Number} [options.X-WDC-PL-OPT-OUT=0] set to 1 to opt-out of allowing Watson to use this request to improve it's services
+ *
  * //todo: investigate other options at http://www.ibm.com/smarterplanet/us/en/ibmwatson/developercloud/apis/#!/speech-to-text/recognizeSessionless
  *
  * @constructor
@@ -6365,6 +7202,11 @@ function RecognizeStream(options) {
         self.on('data', function () {
         }); // todo: is there a better way to put a stream in flowing mode?
       });
+      if (!options.silent) {
+        console.log(new Error('Watson Speech to Text RecognizeStream: the ' + event + ' event is deprecated and will be removed from a future release. ' +
+          'Please set {objectMode: true} and listen for the data event instead. ' +
+          'Pass {silent: true} to disable this message.'));
+      }
     }
   }
   this.on('newListener', flowForResults);
@@ -6387,23 +7229,37 @@ RecognizeStream.prototype.initialize = function () {
   }
 
   var queryParams = util._extend({model: 'en-US_BroadbandModel'}, pick(options, QUERY_PARAMS_ALLOWED));
-  var queryString = Object.keys(queryParams).map(function (key) {
-    return key + '=' + (key == 'watson-token' ? queryParams[key] : encodeURIComponent(queryParams[key])); // the server chokes if the token is correctly url-encoded
-  }).join('&');
-
+  var queryString = qs.stringify(queryParams);
   var url = (options.url || "wss://stream.watsonplatform.net/speech-to-text/api").replace(/^http/, 'ws') + '/v1/recognize?' + queryString;
 
-  var openingMessage = util._extend({
+  // turn off all the extras if we're just outputting text
+  var textModeDefaults = {
     action: 'start',
     'content-type': 'audio/wav',
     continuous: true,
+    inactivity_timeout: 30,
+    interim_results: false,
+    word_confidence: false,
+    timestamps: false,
+    max_alternatives: 1
+  };
+
+  // but turn everything on if we're in objectMode and the end user can consume it
+  var objectModeDefaults = {
+    action: 'start',
+    'content-type': 'audio/wav',
+    continuous: true,
+    inactivity_timeout: 30,
     interim_results: true,
     word_confidence: true,
     timestamps: true,
-    max_alternatives: 3,
-    inactivity_timeout: 30
-  }, pick(options, OPENING_MESSAGE_PARAMS_ALLOWED));
+    max_alternatives: 3
+  };
 
+  var openingMessage = defaults(
+    pick(options, OPENING_MESSAGE_PARAMS_ALLOWED),
+    (options.objectMode || options.readableObjectMode) ? objectModeDefaults : textModeDefaults
+  );
 
   var self = this;
 
@@ -6431,11 +7287,17 @@ RecognizeStream.prototype.initialize = function () {
       self.push(null);
     }
     /**
-     * @event RecognizeStream#connection-close
+     * @event RecognizeStream#close
      * @param {Number} reasonCode
      * @param {String} description
      */
-    self.emit('close', e.code, e.reason);
+    self.emit('close', e.code, e.reason);    /**
+     * @event RecognizeStream#connection-close
+     * @param {Number} reasonCode
+     * @param {String} description
+     * @deprecated
+     */
+    self.emit('connection-close', e.code, e.reason);
   };
 
   /**
@@ -6479,29 +7341,37 @@ RecognizeStream.prototype.initialize = function () {
       }
     } else if (data.results) {
       /**
-       * Object with interim or final results, including possible alternatives. May have no results at all for empty audio files.
+       * Object with array of interim or final results, possibly including confidence scores, alternatives, and word timing. May have no results at all for empty audio files.
        * @event RecognizeStream#results
        * @param {Object} results
-       * @deprecated - use the 'result' event (singular) instead
+       * @deprecated - use objectMode and listen for the 'data' event instead
        */
       self.emit('results', data.results);
 
       // note: currently there is always either 0 or 1 entries in the results array. However, this may change in the future.
       data.results.forEach(function (result) {
+        result.index = data.result_index;
         /**
-         * Object with interim or final results, including possible alternatives. May have no results at all for empty audio files.
+         * Object with interim or final results, possibly including confidence scores, alternatives, and word timing.
          * @event RecognizeStream#results
          * @param {Object} results
+         * @deprecated - use objectMode and listen for the 'data' event instead
          */
-        result.index = data.result_index;
         self.emit('result', result);
-        if (result.final && result.alternatives) {
+        if (options.objectMode || options.readableObjectMode) {
+          /**
+           * Object with interim or final results, possibly including confidence scores, alternatives, and word timing.
+           * @event RecognizeStream#data
+           * @param {Object} data
+           */
+          self.push(result);
+        } else if (result.final && result.alternatives) {
           /**
            * Finalized text
            * @event RecognizeStream#data
            * @param {String} transcript
            */
-          self.push(result.alternatives[0].transcript, 'utf8'); // this is the "data" event that can be easily piped to other streams
+          self.push(result.alternatives[0].transcript, 'utf8');
         }
       });
     } else {
@@ -6589,7 +7459,7 @@ RecognizeStream.prototype.finish = function finish() {
   }
 };
 
-RecognizeStream.prototype.promise = require('./promise');
+RecognizeStream.prototype.promise = require('./to-promise');
 
 
 RecognizeStream.getContentType = function (buffer) {
@@ -6600,57 +7470,67 @@ RecognizeStream.getContentType = function (buffer) {
 module.exports = RecognizeStream;
 
 }).call(this,require('_process'))
-},{"./content-type":37,"./promise":43,"_process":11,"object.pick":31,"stream":25,"util":28,"websocket":34}],48:[function(require,module,exports){
+},{"../util/querystring.js":61,"./content-type":45,"./to-promise":56,"_process":24,"defaults":8,"object.pick":22,"stream":36,"util":40,"websocket":41}],55:[function(require,module,exports){
+(function (Buffer){
 'use strict';
 
-var Transform = require('stream').Transform;
+var Duplex = require('stream').Duplex;
 var util = require('util');
 var clone = require('clone');
+var defaults = require('defaults');
 
 /**
- * Applies some basic formating to transcriptions:
- *  - Capitalize the first word of each sentence
- *  - Add a period to the end
- *  - Fix any "cruft" in the transcription
- *  - etc.
+ * Slows results down to no faster than real time.
  *
- * @param opts
- * @param opts.model - some models / languages need special handling
- * @param [opts.hesitation='\u2026'] - what to put down for a "hesitation" event, defaults to an ellipsis (...)
+ * Useful when running recognizeBlob because the text can otherwise appear before the words are spoken
+ *
+ * @param {Object} opts
+ * @param {*} [opts.emitAtt=TimingStream.START] - set to TimingStream.END to only emit text that has been completely spoken.
+ * @param {Number} [opts.delay=0] - Additional delay (in seconds) to apply before emitting words, useful for precise syncing to audio tracks. May be negative
  * @constructor
  */
 function TimingStream(opts) {
-  this.opts = util._extend({
-    emitAt: TimingStream.WORD_START // WORD_START = emit the word as it's beginning to be spoken, WORD_END = once it's completely spoken
-  }, opts);
-  Transform.call(this, opts);
+  this.options = defaults(opts, {
+    emitAt: TimingStream.START,
+    delay: 0,
+    allowHalfOpen: true, // keep the readable side open after the source closes
+    writableObjectMode: true
+  });
+  Duplex.call(this, opts);
 
   this.startTime = Date.now();
   // buffer to store future results
   this.final = [];
   this.interim = [];
   this.nextTick = null;
+  this.sourceEnded = false;
 
   var self = this;
   this.on('pipe', function(source) {
-    source.on('result', self.handleResult.bind(self));
-    if(source.stop) {
-      self.stop = source.stop.bind(source);
-    }
+    source.on('end', function() {
+      self.sourceEnded = true; // todo: see if there's anything built-in that does this for us
+    });
   });
 }
-util.inherits(TimingStream, Transform);
+util.inherits(TimingStream, Duplex);
 
-TimingStream.WORD_START = 1;
-TimingStream.WORD_END = 2;
+TimingStream.START = 1;
+TimingStream.END = 2;
 
-TimingStream.prototype._transform = function(chunk, encoding, next) {
-  // ignore - we'll emit our own final text based on the result events
+TimingStream.prototype._write = function(result, encoding, next) {
+  if (result instanceof Buffer) {
+    return this.emit('error', new Error('TimingStream requires the source to be in objectMode'));
+  }
+  this.handleResult(result);
   next();
 };
 
+TimingStream.prototype._read = function(size) {
+  // ignore - we'll emit results once the time has come
+};
+
 TimingStream.prototype.cutoff = function cutoff() {
-  return (Date.now() - this.startTime)/1000;
+  return (Date.now() - this.startTime)/1000 - this.options.delay;
 };
 
 TimingStream.prototype.withinRange = function(result, cutoff) {
@@ -6658,7 +7538,7 @@ TimingStream.prototype.withinRange = function(result, cutoff) {
     // timestamp structure is ["word", startTime, endTime]
     // if the first timestamp ends before the cutoff, then it's at least partially within range
     var timestamp = alt.timestamps[0];
-    return !!timestamp && timestamp[this.opts.emitAt] <= cutoff;
+    return !!timestamp && timestamp[this.options.emitAt] <= cutoff;
   }, this);
 };
 
@@ -6667,7 +7547,7 @@ TimingStream.prototype.completelyWithinRange = function(result, cutoff) {
     // timestamp structure is ["word", startTime, endTime]
     // if the last timestamp ends before the cutoff, then it's completely within range
     var timestamp = alt.timestamps[alt.timestamps.length - 1];
-    return timestamp[this.opts.emitAt] <= cutoff;
+    return timestamp[this.options.emitAt] <= cutoff;
   }, this);
 };
 
@@ -6675,13 +7555,13 @@ TimingStream.prototype.completelyWithinRange = function(result, cutoff) {
  * Clones the given result and then crops out any words that occur later than the current cutoff
  * @param result
  */
-Transform.prototype.crop = function crop(result, cutoff) {
+Duplex.prototype.crop = function crop(result, cutoff) {
   result = clone(result);
   result.alternatives = result.alternatives.map(function(alt) {
     var timestamps = [];
     for (var i=0, timestamp; i<alt.timestamps.length; i++) {
       timestamp = alt.timestamps[i];
-      if (timestamp[this.opts.emitAt] <= cutoff) {
+      if (timestamp[this.options.emitAt] <= cutoff) {
         timestamps.push(timestamp);
       } else {
         break;
@@ -6701,45 +7581,34 @@ Transform.prototype.crop = function crop(result, cutoff) {
 /**
  * Returns one of:
  *  - undefined if the next result is completely later than the current cutoff
- *  - a cropped clone of the next result if it's later than the current cutoff
- *  - the original next result object (removing it from the array) if it's completely earlier than the current cutoff
+ *  - a cropped clone of the next result if it's later than the current cutoff && in objectMode
+ *  - the original next result object (removing it from the array) if it's completely earlier than the current cutoff (or we're in string mode with emitAt set to start)
  *
  * @param results
+ * @param cutoff
  * @returns {*}
  */
 TimingStream.prototype.getCurrentResult = function getCurrentResult(results, cutoff) {
   if (results.length && this.withinRange(results[0], cutoff)) {
-    return this.completelyWithinRange(results[0], cutoff) ? results.shift() : this.crop(results[0], cutoff);
-  }
-};
-
-/**
- * try to figure out when we'll emit the next word
- * @param lastResultWasFinal
- * @param numCurrentTimestamps
- * @returns {*}
- */
-TimingStream.prototype.getNextWordOffset = function getNextWordOffset(lastResultWasFinal, numCurrentTimestamps) {
-  if (lastResultWasFinal) {
-    // if the current result is final, then grab the first timestamp of the next one
-    var nextResult = this.final[0] || this.interim[0];
-    return nextResult && nextResult.alternatives[0].timestamps[0][this.opts.emitAt];
-  } else {
-    // if the current result wasn't final, then we just want the next word from the current result (assuming there is one)
-    var currentResultSource = this.final[0] || this.interim[0];
-    var nextTimestamp = currentResultSource && currentResultSource.alternatives[0].timestamps[numCurrentTimestamps];
-    return nextTimestamp && nextTimestamp[this.opts.emitAt];
+    var completeResult = this.completelyWithinRange(results[0], cutoff);
+    if (this.options.objectMode || this.options.readableObjectMode) {
+      // object mode: emit either a complete result or a cropped result
+      return completeResult ? results.shift() : this.crop(results[0], cutoff);
+    } else if (completeResult || this.options.emitAt == TimingStream.START) {
+      // string mode: emit either a complete result or nothing
+      return results.shift();
+    }
   }
 };
 
 
 /**
- * Tick occurs every half second, or when results are received if we're behind schedule.
+ * Tick emits any buffered words that have a timestamp before the current time, then calls scheduleNextTick()
  */
 TimingStream.prototype.tick = function tick() {
   var cutoff = this.cutoff();
 
-  this.nextTick = null;
+  clearTimeout(this.nextTick);
   var result = this.getCurrentResult(this.final, cutoff);
 
   if (!result) {
@@ -6747,17 +7616,47 @@ TimingStream.prototype.tick = function tick() {
   }
 
   if(result) {
-    this.emit('result', result);
-    if (result.final) {
+    if (this.options.objectMode || this.options.readableObjectMode) {
+      this.push(result);
+    } else {
       this.push(result.alternatives[0].transcript);
     }
-    var nextWordOffset = this.getNextWordOffset(result.final, result.alternatives[0].timestamps.length);
-    // if we have a next word, set a timeout to emit it. Otherwise the next call to handleResult() will trigger a tick.
-    if (nextWordOffset) {
-      this.nextTick = setTimeout(this.tick.bind(this), this.startTime + (nextWordOffset*1000));
+    if (result.final) {
+      return this.nextTick = setTimeout(this.tick.bind(this), 0); // in case we are multiple results behind - don't schedule until we are out of final results that are due now
     }
   }
 
+  this.scheduleNextTick(cutoff);
+};
+
+/**
+ * Schedules next tick if possible. Requires previous stream to emit recognize objects (objectMode or readableObjectMode)
+ *
+ * triggers the 'close' and 'end' events if the buffer is empty and no further results are expected
+ *
+ * @param cutoff
+ */
+TimingStream.prototype.scheduleNextTick = function scheduleNextTick(cutoff) {
+
+  // prefer final results over interim - when final results are added, any older interim ones are automatically deleted.
+  var nextResult = this.final[0] || this.interim[0];
+  if (nextResult) {
+    // loop through the timestamps until we find one that comes after the current cutoff (there should always be one)
+    var timestamps = nextResult.alternatives[0].timestamps;
+    for(var i=0; i<timestamps.length; i++) {
+      var wordOffset = timestamps[i][this.options.emitAt];
+      if (wordOffset > cutoff) {
+        return this.nextTick = setTimeout(this.tick.bind(this), this.startTime + (wordOffset*1000));
+      }
+    }
+    throw new Error('No future words found'); // this shouldn't happen ever - getCurrentResult should automatically delete the result from the buffer if all of it's words are consumed
+  } else {
+    // if we have no next result in the buffer, and the source has ended, then we're done.
+    if (this.sourceEnded) {
+      this.emit('close');
+      this.push(null);
+    }
+  }
 };
 
 function noTimestamps(result) {
@@ -6772,7 +7671,7 @@ function noTimestamps(result) {
  */
 TimingStream.prototype.handleResult = function handleResult(result) {
   if (noTimestamps(result)) {
-    throw new Error('TimingStream requires timestamps');
+    return this.emit('error', new Error('TimingStream requires timestamps'));
   }
 
   // additional alternatives do not include timestamps, so we can't process and emit them correctly
@@ -6780,7 +7679,7 @@ TimingStream.prototype.handleResult = function handleResult(result) {
     result.alternatives.length = 1;
   }
 
-  // loop through the buffer and delete any interiml results with the same or lower index
+  // loop through the buffer and delete any interim results with the same or lower index
   while(this.interim.length && this.interim[0].index <= result.index) {
     this.interim.shift();
   }
@@ -6792,57 +7691,100 @@ TimingStream.prototype.handleResult = function handleResult(result) {
     this.interim.push(result);
   }
 
-  if (!this.nextTick) {
-    this.tick();
-  }
+  this.tick();
 };
-
-TimingStream.prototype.stop = function(){}; // usually overwritten during the `pipe` event
-
 
 module.exports = TimingStream;
 
-},{"clone":29,"stream":25,"util":28}],49:[function(require,module,exports){
-(function (Buffer){
+}).call(this,require("buffer").Buffer)
+},{"buffer":4,"clone":6,"defaults":8,"stream":36,"util":40}],56:[function(require,module,exports){
+'use strict';
+
+/**
+ * Helper method that can be bound to a stream - it sets the output to utf-8, captures all of the results, and returns a promise that resolves to the final text.
+ * Essentially a smaller version of concat-stream wrapped in a promise
+ *
+ * @param [stream=] optional stream param for when not bound to an existing stream instance
+ */
+module.exports = function promise(stream) {
+  stream = stream || this;
+  return new Promise(function (resolve, reject) {
+    var results = [];
+    stream.setEncoding('utf8')
+    .on('data', function (result) {
+      results.push(result);
+    }).on('end', function () {
+      resolve(typeof results[0] === 'string' ? results.join('') : results);
+    }).on('error', reject);
+  });
+};
+
+},{}],57:[function(require,module,exports){
+(function (process,Buffer){
 'use strict';
 var Transform = require('stream').Transform;
 var util = require('util');
+var defaults = require('defaults');
 
-function WebAudioWavStream(opts) {
-
-  Transform.call(this, opts);
-
-  this.sourceSampleRate = 4800;
-  this.sampleRate = 16000;
-
-  this.bufferUnusedSamples = new Float32Array(0);
-
-  var self = this;
-  this.on('pipe', function (src) {
-    src.on('format', function (format) {
-      self.sourceSampleRate = format.sampleRate;
-    });
+var TARGET_SAMPLE_RATE = 16000;
+/**
+ * Transforms Buffers or AudioBuffers into a binary stream of l16 (raw wav) audio, downsampling in the process.
+ *
+ * The watson speech-to-text service works on 1600khz and internally downsamples audio received at higher samplerates.
+ * WebAudio is usually 48000khz, so downsampling here reduces bandwidth usage by 2/3.
+ *
+ * Format event + stream can be combined with https://www.npmjs.com/package/wav to generate a wav file with a proper header
+ *
+ * Todo: support multi-channel audio (for use with <audio>/<video> elements) - will require interleaving audio channels
+ *
+ * @constructor
+ */
+function WebAudioL16Stream(options) {
+  options = this.options = defaults(options, {
+    sourceSampleRate: 48000,
+    downsample: true
   });
 
-  self.writeHeader();
+  Transform.call(this, options);
+
+  this.bufferUnusedSamples = [];
+
+  if (options.objectMode || options.writableObjectMode) {
+    this._transform = this.handleFirstAudioBuffer;
+  } else {
+    this._transform = this.transformBuffer;
+    process.nextTick(this.emitFormat.bind(this));
+  }
+
 }
-util.inherits(WebAudioWavStream, Transform);
+util.inherits(WebAudioL16Stream, Transform);
+
+
+WebAudioL16Stream.prototype.emitFormat = function emitFormat() {
+  this.emit('format', {
+    channels: 1,
+    bitDepth: 16,
+    sampleRate: this.options.downsample ? TARGET_SAMPLE_RATE : this.options.sourceSampleRate,
+    signed: true,
+    float: false
+  });
+};
 
 /**
- * Converts WebAudio to 'audio/l16' (raw wav) and downsamples to 16 kHz.
+ * Downsamples WebAudio to 16 kHz.
  *
- * Explanation for the math: The raw values captured from the Web Audio API are
- * in 32-bit Floating Point, between -1 and 1 (per the specification).
- * The values for 16-bit PCM range between -32768 and +32767 (16-bit signed integer).
- * Multiply to control the volume of the output. We store in little endian.
+ * Browsers can downsample WebAudio natively with OfflineAudioContext's but it was designed for non-streaming use and
+ * requires a new context for each AudioBuffer. Firefox can handle this, but chrome (v47) crashes after a few minutes.
+ * So, we'll do it in JS for now.
  *
- * @param  {Object} buffer Microphone/MediaElement audio chunk
- * @return {Buffer} 'audio/l16' chunk
- * @deprecated This method is deprecated
+ * This really belongs in it's own stream, but there's no way to create new AudioBuffer instances from JS, so its
+ * fairly coupled to the wav conversion code.
+ *
+ * @param  {AudioBuffer} buffer Microphone/MediaElement audio chunk
+ * @return {Float32Array} 'audio/l16' chunk
  */
-WebAudioWavStream.prototype._exportDataBufferTo16Khz = function (nodebuffer) {
-  var bufferNewSamples = new Float32Array(nodebuffer.buffer),
-    buffer = null,
+WebAudioL16Stream.prototype.downsample = function downsample(bufferNewSamples) {
+  var buffer = null,
     newSamples = bufferNewSamples.length,
     unusedSamples = this.bufferUnusedSamples.length;
 
@@ -6865,31 +7807,20 @@ WebAudioWavStream.prototype._exportDataBufferTo16Khz = function (nodebuffer) {
       -0.0040653, 0.14527, 0.26927, 0.33913, 0.26927, 0.14527, -0.0040653, -0.056487,
       -0.058675, 0.0047792, 0.019989, 0.040173, -0.00089024, -0.037935
     ],
-    samplingRateRatio = this.sourceSampleRate / 16000,
+    samplingRateRatio = this.options.sourceSampleRate / TARGET_SAMPLE_RATE,
     nOutputSamples = Math.floor((buffer.length - filter.length) / (samplingRateRatio)) + 1,
-    pcmEncodedBuffer16k = new ArrayBuffer(nOutputSamples * 2),
-    dataView16k = new DataView(pcmEncodedBuffer16k),
-    index = 0,
-    volume = 0x7FFF, //range from 0 to 0x7FFF to control the volume
-    nOut = 0;
+    outputBuffer = new Float32Array(nOutputSamples);
 
-  for (i = 0; i + filter.length - 1 < buffer.length; i = Math.round(samplingRateRatio * nOut)) {
+  for (var offset, i2 = 0; i2 + filter.length - 1 < buffer.length; i2++) {
+    offset = Math.round(samplingRateRatio * i2);
     var sample = 0;
     for (var j = 0; j < filter.length; ++j) {
-      sample += buffer[i + j] * filter[j];
+      sample += buffer[offset + j] * filter[j];
     }
-    sample *= volume;
-    try {
-      dataView16k.setInt16(index, sample, true); // 'true' -> means little endian
-    } catch (ex) {
-      // chrome occasionally throws RangeError: Offset is outside the bounds of the DataView
-      // todo: actually fix it instead of just ignoring the error..
-    }
-    index += 2;
-    nOut++;
+    outputBuffer[i2] = sample;
   }
 
-  var indexSampleAfterLastUsed = Math.round(samplingRateRatio * nOut);
+  var indexSampleAfterLastUsed = Math.round(samplingRateRatio * i2);
   var remaining = buffer.length - indexSampleAfterLastUsed;
   if (remaining > 0) {
     this.bufferUnusedSamples = new Float32Array(remaining);
@@ -6900,78 +7831,158 @@ WebAudioWavStream.prototype._exportDataBufferTo16Khz = function (nodebuffer) {
     this.bufferUnusedSamples = new Float32Array(0);
   }
 
-  return new Buffer(dataView16k.buffer);
+  return outputBuffer
 };
-
 
 /**
- * The max size of the "data" chunk of a WAVE file. This is the max unsigned
- * 32-bit int value, minus 100 bytes (overkill, 44 would be safe) for the header.
+ * Accepts a Float32Array of audio data and converts it to a Buffer of l16 audio data (raw wav)
  *
- * From https://github.com/TooTallNate/node-wav/blob/master/lib/writer.js
+ * Explanation for the math: The raw values captured from the Web Audio API are
+ * in 32-bit Floating Point, between -1 and 1 (per the specification).
+ * The values for 16-bit PCM range between -32768 and +32767 (16-bit signed integer).
+ * Filter & combine samples to reduce frequency, then multiply to by 0x7FFF (32767) to convert.
+ * Store in little endian.
  *
- * @api private
+ * @param input
+ * @returns {Buffer}
  */
-
-var MAX_WAV = 4294967295 - 100;
-
-function writeString(view, offset, string) {
-  for (var i = 0; i < string.length; i++){
-    view.setUint8(offset + i, string.charCodeAt(i));
+WebAudioL16Stream.prototype.floatTo16BitPCM = function(input){
+  var output = new DataView(new ArrayBuffer(input.length*2)); // length is in bytes (8-bit), so *2 to get 16-bit length
+  for (var i = 0; i < input.length; i++){
+    var multiplier = input[i] < 0 ? 0x8000 : 0x7FFF; // 16-bit signed range is -32768 to 32767
+    output.setInt16(i*2, (input[i] * multiplier)|0, true); // index, value, little edian
   }
-}
-
-WebAudioWavStream.prototype.writeHeader = function writeHeader() {
-  var buffer = new ArrayBuffer(44);
-  var view = new DataView(buffer);
-  var length = MAX_WAV; // can't use the actuall length because we don't know it yet
-  var numChannels = 1;
-  var sampleRate = 16000;
-
-  /* RIFF identifier */
-  writeString(view, 0, 'RIFF');
-  /* RIFF chunk length */
-  view.setUint32(4, 36 + length, true);
-  /* RIFF type */
-  writeString(view, 8, 'WAVE');
-  /* format chunk identifier */
-  writeString(view, 12, 'fmt ');
-  /* format chunk length */
-  view.setUint32(16, 16, true);
-  /* sample format (raw PCM) */
-  view.setUint16(20, 1, true);
-  /* channel count */
-  view.setUint16(22, numChannels, true);
-  /* sample rate */
-  view.setUint32(24, sampleRate, true);
-  /* byte rate (sample rate * block align) */
-  view.setUint32(28, sampleRate * 4, true);
-  /* block align (channel count * bytes per sample) */
-  view.setUint16(32, numChannels * 2, true);
-  /* bits per sample */
-  view.setUint16(34, 16, true);
-  /* data chunk identifier */
-  writeString(view, 36, 'data');
-  /* data chunk length */
-  view.setUint32(40, length, true);
-
-  this.push(new Buffer(buffer));
+  return new Buffer(output.buffer);
 };
 
-WebAudioWavStream.prototype._transform = function (chunk, encoding, next) {
-  this.push(this._exportDataBufferTo16Khz(chunk));
+/**
+ * Does some one-time setup to grab sampleRate and emit format, then sets _transform to the actual audio buffer handler and calls it.
+ * @param audioBuffer
+ * @param encoding
+ * @param next
+ */
+WebAudioL16Stream.prototype.handleFirstAudioBuffer = function handleFirstAudioBuffer(audioBuffer, encoding, next) {
+  this.options.sourceSampleRate = audioBuffer.sampleRate;
+  this.emitFormat();
+  this._transform = this.transformAudioBuffer;
+  this._transform(audioBuffer, encoding, next);
+};
+
+/**
+ * Accepts an AudioBuffer (for objectMode), then downsamples to 16000 and converts to a 16-bit pcm
+ *
+ * @param audioBuffer
+ * @param encoding
+ * @param next
+ */
+WebAudioL16Stream.prototype.transformAudioBuffer = function (audioBuffer, encoding, next) {
+  var source = audioBuffer.getChannelData(0);
+  if (this.options.downsample) {
+    source = this.downsample(source);
+  }
+  this.push(this.floatTo16BitPCM(source));
   next();
 };
 
-WebAudioWavStream.prototype._flush = function (next) {
-  // todo: handle anything left in this.bufferUnusedSamples here...
+/**
+ * Accepts a Buffer (for binary mode), then downsamples to 16000 and converts to a 16-bit pcm
+ *
+ * @param {Buffer} nodebufferok
+ * @param encoding
+ * @param next
+ */
+WebAudioL16Stream.prototype.transformBuffer = function (nodebuffer, encoding, next) {
+  var source = new Float32Array(nodebuffer.buffer);
+  if (this.options.downsample) {
+    source = this.downsample(source);
+  }
+  this.push(this.floatTo16BitPCM(source));
   next();
 };
-
-module.exports = WebAudioWavStream;
-
+//new Float32Array(nodebuffer.buffer)
 
 
-}).call(this,require("buffer").Buffer)
-},{"buffer":3,"stream":25,"util":28}]},{},[1])(1)
+module.exports = WebAudioL16Stream;
+
+
+
+}).call(this,require('_process'),require("buffer").Buffer)
+},{"_process":24,"buffer":4,"defaults":8,"stream":36,"util":40}],58:[function(require,module,exports){
+"use strict";
+require('whatwg-fetch'); // pollyfill - most supported browsers have this built-in
+
+module.exports = function getVoices(options) {
+  if (!options || !options.token) {
+    throw new Error("Watson TextToSpeech: missing required parameter: options.token");
+  }
+  var reqOpts = {
+    credentials: 'omit',
+    headers: {
+      'accept': 'application/json'
+    }
+  };
+  return fetch('https://stream.watsonplatform.net/text-to-speech/api/v1/voices?watson-token=' + options.token, reqOpts)
+    .then(function(response){
+      return response.json();
+    }).then(function(obj) {
+      return obj.voices;
+    });
+};
+
+},{"whatwg-fetch":44}],59:[function(require,module,exports){
+"use strict";
+
+exports.synthesize = require('./synthesize');
+
+exports.getVoices = require('./get-voices');
+
+},{"./get-voices":58,"./synthesize":60}],60:[function(require,module,exports){
+"use strict";
+var qs = require('../util/querystring.js');
+
+/**
+ * voice=en-US_AllisonVoice
+ text=Conscious%20of%20its%20spiritual%20and%20moral%20heritage%2C%20the%20Union%20is%20founded%20on%20the%20indivisible%2C%20universal%20values%20of%20human%20dignity%2C%20freedom%2C%20equality%20and%20solidarity%3B%20it%20is%20based%20on%20the%20principles%20of%20democracy%20and%20the%20rule%20of%20law.%20It%20places%20the%20individual%20at%20the%20heart%20of%20its%20activities%2C%20by%20establishing%20the%20citizenship%20of%20the%20Union%20and%20by%20creating%20an%20area%20of%20freedom%2C%20security%20and%20justice.
+ =0
+ * @param options
+ * @param options.token auth token
+ * @param options.text text ty speak
+ * @param [options.voice=en-US_MichaelVoice] what voice to use - call TextToSpeech.getVoices() for a complete list.
+ * @param [options.X-WDC-PL-OPT-OUT=0] set to 1 to opt-out of allowing Watson to use this request to improve it's services
+ * @returns {Audio}
+ */
+module.exports = function synthesize(options) {
+  if (!options || !options.token) {
+    throw new Error("Watson TextToSpeech: missing required parameter: options.token");
+  }
+  options['watson-token'] = options.token;
+  delete options.token;
+  var audio = new Audio();
+  audio.crossOrigin = true;
+  audio.src = 'https://stream.watsonplatform.net/text-to-speech/api/v1/synthesize?' + qs.stringify(options);
+  audio.play();
+  return audio;
+};
+
+
+},{"../util/querystring.js":61}],61:[function(require,module,exports){
+"use strict";
+
+/**
+ * Stringify query params, Watson-style
+ *
+ * Why? The server that processes auth tokens currently only accepts the *exact* string, even if it's invalid for a URL.
+ * Properly url-encoding percent characters causes it to reject the token.
+ * So, this is a custom qs.stringify function that properly encodes everything except watson-token, passing it along verbatim
+ *
+ * @param {Object} queryParams
+ * @return {String}
+ */
+exports.stringify = function stringify(queryParams) {
+  return Object.keys(queryParams).map(function (key) {
+    return key + '=' + (key == 'watson-token' ? queryParams[key] : encodeURIComponent(queryParams[key])); // the server chokes if the token is correctly url-encoded
+  }).join('&');
+};
+
+},{}]},{},[1])(1)
 });

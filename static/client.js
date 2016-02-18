@@ -2,6 +2,7 @@ var state                   = 'loading'
 var model                   = 'en-US_BroadbandModel'
 var sttToken                = null
 var $button                 = document.getElementById('action')
+var sttStream               = null
 var defaultButtonClassName  = 'h3 btn btn-primary mb4'
 
 $button.addEventListener('click', function() {
@@ -9,13 +10,14 @@ $button.addEventListener('click', function() {
     case 'ready':
       state               = 'recording'
       $button.textContent = 'Recording...'
-      WatsonSpeech.SpeechToText
+      sttStream = WatsonSpeech.SpeechToText
         .recognizeMicrophone({ token: sttToken, model: model })
         .on('result', onResult)
         .on('data', onFinish)
       break
 
     case 'recording':
+      sttStream.stop()
       state               = 'waiting'
       $button.disable     = true
       $button.textContent = 'Waiting final results...'
