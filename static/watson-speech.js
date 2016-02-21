@@ -5,23 +5,37 @@
 'use strict';
 
 /**
- * @namespace WatsonSpeech
+ * IBM Watson Speech JavaScript SDK
+ *
+ * Top-level module includes the version, a [fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) pollyfill, and both of the speech libraries.
+ *
+ * If using a bundler such as browserify, you may optionally include sub-modules directly to reduce the size of the final bundle
+ *
+ * @module watson-speech
  */
 
 /**
- * Version - for public releases, this should have the version number, e.g 'v1.0.0'
+ * Example: 'v1.0.0'
+ *
+ * Will be `undefined` during development
  */
-exports.version = "v0.9.0";
+exports.version = "v0.10.1";
 
 /**
- * SpeechToText
- * @type {*|exports|module.exports}
+ *
+ * @see module:watson-speech/speech-to-text
  */
 exports.SpeechToText = require('./speech-to-text');
 
+/**
+ *
+ * @see module:watson-speech/text-to-speech
+ */
 exports.TextToSpeech = require('./text-to-speech');
 
-},{"./speech-to-text":49,"./text-to-speech":59}],2:[function(require,module,exports){
+
+
+},{"./speech-to-text":48,"./text-to-speech":59}],2:[function(require,module,exports){
 ;(function (exports) {
   'use strict'
 
@@ -6120,397 +6134,6 @@ module.exports={
 }
 
 },{}],44:[function(require,module,exports){
-(function(self) {
-  'use strict';
-
-  if (self.fetch) {
-    return
-  }
-
-  function normalizeName(name) {
-    if (typeof name !== 'string') {
-      name = String(name)
-    }
-    if (/[^a-z0-9\-#$%&'*+.\^_`|~]/i.test(name)) {
-      throw new TypeError('Invalid character in header field name')
-    }
-    return name.toLowerCase()
-  }
-
-  function normalizeValue(value) {
-    if (typeof value !== 'string') {
-      value = String(value)
-    }
-    return value
-  }
-
-  function Headers(headers) {
-    this.map = {}
-
-    if (headers instanceof Headers) {
-      headers.forEach(function(value, name) {
-        this.append(name, value)
-      }, this)
-
-    } else if (headers) {
-      Object.getOwnPropertyNames(headers).forEach(function(name) {
-        this.append(name, headers[name])
-      }, this)
-    }
-  }
-
-  Headers.prototype.append = function(name, value) {
-    name = normalizeName(name)
-    value = normalizeValue(value)
-    var list = this.map[name]
-    if (!list) {
-      list = []
-      this.map[name] = list
-    }
-    list.push(value)
-  }
-
-  Headers.prototype['delete'] = function(name) {
-    delete this.map[normalizeName(name)]
-  }
-
-  Headers.prototype.get = function(name) {
-    var values = this.map[normalizeName(name)]
-    return values ? values[0] : null
-  }
-
-  Headers.prototype.getAll = function(name) {
-    return this.map[normalizeName(name)] || []
-  }
-
-  Headers.prototype.has = function(name) {
-    return this.map.hasOwnProperty(normalizeName(name))
-  }
-
-  Headers.prototype.set = function(name, value) {
-    this.map[normalizeName(name)] = [normalizeValue(value)]
-  }
-
-  Headers.prototype.forEach = function(callback, thisArg) {
-    Object.getOwnPropertyNames(this.map).forEach(function(name) {
-      this.map[name].forEach(function(value) {
-        callback.call(thisArg, value, name, this)
-      }, this)
-    }, this)
-  }
-
-  function consumed(body) {
-    if (body.bodyUsed) {
-      return Promise.reject(new TypeError('Already read'))
-    }
-    body.bodyUsed = true
-  }
-
-  function fileReaderReady(reader) {
-    return new Promise(function(resolve, reject) {
-      reader.onload = function() {
-        resolve(reader.result)
-      }
-      reader.onerror = function() {
-        reject(reader.error)
-      }
-    })
-  }
-
-  function readBlobAsArrayBuffer(blob) {
-    var reader = new FileReader()
-    reader.readAsArrayBuffer(blob)
-    return fileReaderReady(reader)
-  }
-
-  function readBlobAsText(blob) {
-    var reader = new FileReader()
-    reader.readAsText(blob)
-    return fileReaderReady(reader)
-  }
-
-  var support = {
-    blob: 'FileReader' in self && 'Blob' in self && (function() {
-      try {
-        new Blob();
-        return true
-      } catch(e) {
-        return false
-      }
-    })(),
-    formData: 'FormData' in self,
-    arrayBuffer: 'ArrayBuffer' in self
-  }
-
-  function Body() {
-    this.bodyUsed = false
-
-
-    this._initBody = function(body) {
-      this._bodyInit = body
-      if (typeof body === 'string') {
-        this._bodyText = body
-      } else if (support.blob && Blob.prototype.isPrototypeOf(body)) {
-        this._bodyBlob = body
-      } else if (support.formData && FormData.prototype.isPrototypeOf(body)) {
-        this._bodyFormData = body
-      } else if (!body) {
-        this._bodyText = ''
-      } else if (support.arrayBuffer && ArrayBuffer.prototype.isPrototypeOf(body)) {
-        // Only support ArrayBuffers for POST method.
-        // Receiving ArrayBuffers happens via Blobs, instead.
-      } else {
-        throw new Error('unsupported BodyInit type')
-      }
-
-      if (!this.headers.get('content-type')) {
-        if (typeof body === 'string') {
-          this.headers.set('content-type', 'text/plain;charset=UTF-8')
-        } else if (this._bodyBlob && this._bodyBlob.type) {
-          this.headers.set('content-type', this._bodyBlob.type)
-        }
-      }
-    }
-
-    if (support.blob) {
-      this.blob = function() {
-        var rejected = consumed(this)
-        if (rejected) {
-          return rejected
-        }
-
-        if (this._bodyBlob) {
-          return Promise.resolve(this._bodyBlob)
-        } else if (this._bodyFormData) {
-          throw new Error('could not read FormData body as blob')
-        } else {
-          return Promise.resolve(new Blob([this._bodyText]))
-        }
-      }
-
-      this.arrayBuffer = function() {
-        return this.blob().then(readBlobAsArrayBuffer)
-      }
-
-      this.text = function() {
-        var rejected = consumed(this)
-        if (rejected) {
-          return rejected
-        }
-
-        if (this._bodyBlob) {
-          return readBlobAsText(this._bodyBlob)
-        } else if (this._bodyFormData) {
-          throw new Error('could not read FormData body as text')
-        } else {
-          return Promise.resolve(this._bodyText)
-        }
-      }
-    } else {
-      this.text = function() {
-        var rejected = consumed(this)
-        return rejected ? rejected : Promise.resolve(this._bodyText)
-      }
-    }
-
-    if (support.formData) {
-      this.formData = function() {
-        return this.text().then(decode)
-      }
-    }
-
-    this.json = function() {
-      return this.text().then(JSON.parse)
-    }
-
-    return this
-  }
-
-  // HTTP methods whose capitalization should be normalized
-  var methods = ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT']
-
-  function normalizeMethod(method) {
-    var upcased = method.toUpperCase()
-    return (methods.indexOf(upcased) > -1) ? upcased : method
-  }
-
-  function Request(input, options) {
-    options = options || {}
-    var body = options.body
-    if (Request.prototype.isPrototypeOf(input)) {
-      if (input.bodyUsed) {
-        throw new TypeError('Already read')
-      }
-      this.url = input.url
-      this.credentials = input.credentials
-      if (!options.headers) {
-        this.headers = new Headers(input.headers)
-      }
-      this.method = input.method
-      this.mode = input.mode
-      if (!body) {
-        body = input._bodyInit
-        input.bodyUsed = true
-      }
-    } else {
-      this.url = input
-    }
-
-    this.credentials = options.credentials || this.credentials || 'omit'
-    if (options.headers || !this.headers) {
-      this.headers = new Headers(options.headers)
-    }
-    this.method = normalizeMethod(options.method || this.method || 'GET')
-    this.mode = options.mode || this.mode || null
-    this.referrer = null
-
-    if ((this.method === 'GET' || this.method === 'HEAD') && body) {
-      throw new TypeError('Body not allowed for GET or HEAD requests')
-    }
-    this._initBody(body)
-  }
-
-  Request.prototype.clone = function() {
-    return new Request(this)
-  }
-
-  function decode(body) {
-    var form = new FormData()
-    body.trim().split('&').forEach(function(bytes) {
-      if (bytes) {
-        var split = bytes.split('=')
-        var name = split.shift().replace(/\+/g, ' ')
-        var value = split.join('=').replace(/\+/g, ' ')
-        form.append(decodeURIComponent(name), decodeURIComponent(value))
-      }
-    })
-    return form
-  }
-
-  function headers(xhr) {
-    var head = new Headers()
-    var pairs = xhr.getAllResponseHeaders().trim().split('\n')
-    pairs.forEach(function(header) {
-      var split = header.trim().split(':')
-      var key = split.shift().trim()
-      var value = split.join(':').trim()
-      head.append(key, value)
-    })
-    return head
-  }
-
-  Body.call(Request.prototype)
-
-  function Response(bodyInit, options) {
-    if (!options) {
-      options = {}
-    }
-
-    this.type = 'default'
-    this.status = options.status
-    this.ok = this.status >= 200 && this.status < 300
-    this.statusText = options.statusText
-    this.headers = options.headers instanceof Headers ? options.headers : new Headers(options.headers)
-    this.url = options.url || ''
-    this._initBody(bodyInit)
-  }
-
-  Body.call(Response.prototype)
-
-  Response.prototype.clone = function() {
-    return new Response(this._bodyInit, {
-      status: this.status,
-      statusText: this.statusText,
-      headers: new Headers(this.headers),
-      url: this.url
-    })
-  }
-
-  Response.error = function() {
-    var response = new Response(null, {status: 0, statusText: ''})
-    response.type = 'error'
-    return response
-  }
-
-  var redirectStatuses = [301, 302, 303, 307, 308]
-
-  Response.redirect = function(url, status) {
-    if (redirectStatuses.indexOf(status) === -1) {
-      throw new RangeError('Invalid status code')
-    }
-
-    return new Response(null, {status: status, headers: {location: url}})
-  }
-
-  self.Headers = Headers;
-  self.Request = Request;
-  self.Response = Response;
-
-  self.fetch = function(input, init) {
-    return new Promise(function(resolve, reject) {
-      var request
-      if (Request.prototype.isPrototypeOf(input) && !init) {
-        request = input
-      } else {
-        request = new Request(input, init)
-      }
-
-      var xhr = new XMLHttpRequest()
-
-      function responseURL() {
-        if ('responseURL' in xhr) {
-          return xhr.responseURL
-        }
-
-        // Avoid security warnings on getResponseHeader when not allowed by CORS
-        if (/^X-Request-URL:/m.test(xhr.getAllResponseHeaders())) {
-          return xhr.getResponseHeader('X-Request-URL')
-        }
-
-        return;
-      }
-
-      xhr.onload = function() {
-        var status = (xhr.status === 1223) ? 204 : xhr.status
-        if (status < 100 || status > 599) {
-          reject(new TypeError('Network request failed'))
-          return
-        }
-        var options = {
-          status: status,
-          statusText: xhr.statusText,
-          headers: headers(xhr),
-          url: responseURL()
-        }
-        var body = 'response' in xhr ? xhr.response : xhr.responseText;
-        resolve(new Response(body, options))
-      }
-
-      xhr.onerror = function() {
-        reject(new TypeError('Network request failed'))
-      }
-
-      xhr.open(request.method, request.url, true)
-
-      if (request.credentials === 'include') {
-        xhr.withCredentials = true
-      }
-
-      if ('responseType' in xhr && support.blob) {
-        xhr.responseType = 'blob'
-      }
-
-      request.headers.forEach(function(value, name) {
-        xhr.setRequestHeader(name, value)
-      })
-
-      xhr.send(typeof request._bodyInit === 'undefined' ? null : request._bodyInit)
-    })
-  }
-  self.fetch.polyfill = true
-})(typeof self !== 'undefined' ? self : this);
-
-},{}],45:[function(require,module,exports){
 'use strict';
 
 // these are the only content-types currently supported by the speech-to-tet service
@@ -6530,7 +6153,7 @@ module.exports = function contentType(header) {
   return contentTypes[header];
 };
 
-},{}],46:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 'use strict';
 
 var contentType = require('./content-type');
@@ -6553,6 +6176,12 @@ function getContentType(file) {
   });
 }
 
+/**
+ * Plays audio from File/Blob instances
+ * @param file
+ * @param contentType
+ * @constructor
+ */
 function FilePlayer(file, contentType) {
   var audio = this.audio = new Audio();
   if (audio.canPlayType(contentType)) {
@@ -6582,7 +6211,7 @@ module.exports = FilePlayer;
 module.exports.getContentType = getContentType;
 module.exports.playFile = playFile;
 
-},{"./content-type":45}],47:[function(require,module,exports){
+},{"./content-type":44}],46:[function(require,module,exports){
 'use strict';
 
 var Transform = require('stream').Transform;
@@ -6607,7 +6236,7 @@ function FormatStream(opts) {
   this.options = defaults(opts, {
     model: '', // some models should have all spaces removed
     hesitation: '\u2026', // ellipsis
-    decodeStrings: true
+    decodeStrings: false // false = don't convert strings to buffers before passing to _write
   });
   Transform.call(this, opts);
 
@@ -6705,7 +6334,7 @@ FormatStream.prototype.promise = require('./to-promise');
 
 module.exports = FormatStream;
 
-},{"./to-promise":56,"clone":6,"defaults":8,"stream":36,"util":40}],48:[function(require,module,exports){
+},{"./to-promise":55,"clone":6,"defaults":8,"stream":36,"util":40}],47:[function(require,module,exports){
 'use strict';
 
 module.exports = function getUserMedia(constraints) {
@@ -6725,32 +6354,97 @@ module.exports = function getUserMedia(constraints) {
   });
 };
 
-},{}],49:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 (function (Buffer){
 'use strict';
 
+/**
+ * IBM Watson Speech to Text JavaScript SDK
+ *
+ * The primary methods for interacting with the Speech to Text JS SDK are:
+ *  * `recognizeMicrophone()` for live microphone input
+ *  * `recognizeElement()` for transcribing `<audio>` and `<video>` elements
+ *  * `recognizeBlob()` for file `<input>`'s and other data sources
+ *
+ * However, the underlying streams and utils that they use are also provided for advanced usage.
+ *
+ * @module watson-speech/speech-to-text
+ */
+
 module.exports = {
+
   // "easy-mode" API
+  /**
+   * @see module:watson-speech/speech-to-text/recognize-microphone
+   */
   recognizeMicrophone: require('./recognize-microphone'),
+
+  /**
+   * @see module:watson-speech/speech-to-text/recognize-blob
+   */
   recognizeBlob: require('./recognize-blob'),
+
+  /**
+   * @see module:watson-speech/speech-to-text/recognize-element
+   */
   recognizeElement: require('./recognize-element'),
 
+
   // individual components to build more customized solutions
+  /**
+   * @see WebAudioL16Stream
+   */
   WebAudioL16Stream: require('./webaudio-l16-stream'),
+
+  /**
+   * @see MediaElementAudioStream
+   */
   MediaElementAudioStream: require('./media-element-audio-stream'),
+
+  /**
+   * @see RecognizeStream
+   */
   RecognizeStream: require('./recognize-stream'),
+
+  /**
+   * @see FilePlayer
+   */
   FilePlayer: require('./file-player'),
+
+  /**
+   * @todo: move this one to it's own module
+   */
   getUserMedia: require('./getusermedia'),
+
+  /**
+   * @see FormatStream
+   */
   FormatStream: require('./format-stream'),
+
+  /**
+   * @see TimingStream
+   */
   TimingStream: require('./timing-stream'),
 
-  // external components provided here to allow the lib to be used standalone (w/out browserify)
+  /**
+   * @see WritableElementStream
+   */
+  WritableElementStream: require('./writable-element-stream'),
+
+  // external components exposed for convenience
+  /**
+   * @see https://www.npmjs.com/package/microphone-stream
+   */
   MicrophoneStream: require('microphone-stream'),
+
+  /**
+   * @see https://nodejs.org/api/buffer.html
+   */
   Buffer: Buffer
 };
 
 }).call(this,require("buffer").Buffer)
-},{"./file-player":46,"./format-stream":47,"./getusermedia":48,"./media-element-audio-stream":50,"./recognize-blob":51,"./recognize-element":52,"./recognize-microphone":53,"./recognize-stream":54,"./timing-stream":55,"./webaudio-l16-stream":57,"buffer":4,"microphone-stream":16}],50:[function(require,module,exports){
+},{"./file-player":45,"./format-stream":46,"./getusermedia":47,"./media-element-audio-stream":49,"./recognize-blob":50,"./recognize-element":51,"./recognize-microphone":52,"./recognize-stream":53,"./timing-stream":54,"./webaudio-l16-stream":56,"./writable-element-stream":57,"buffer":4,"microphone-stream":16}],49:[function(require,module,exports){
 (function (process,Buffer){
 'use strict';
 var Readable = require('stream').Readable;
@@ -6758,22 +6452,25 @@ var util = require('util');
 var defaults = require('defaults');
 
 /**
- * Turns a MediaStream object (from getUserMedia) into a Node.js Readable stream and converts the audio to Buffers
+ * Extracts audio from an `<audio>` or `<video>` element and provides it as a Node.js Readable stream
  *
- * @see https://developer.mozilla.org/en-US/docs/Web/API/Navigator/getUserMedia
+ * @param {HTMLMediaElement|string} element `<audio>` or `<video>` element or CSS selector
+ * @param {Object} [options] options
+ * @param {Number|null} [options.bufferSize=null] buffer size - Mozilla docs recommend leaving this unset for optimal performance
+ * @param {Boolean} [options.muteSource=false] - If true, the audio will not be sent back to the source
+ * @param {Boolean} [options.objectMode=true] - emit AudioBuffers w/ the audio + a bit of metadata instead of Node.js Buffers with audio only
  *
- * @param {MediaStream|HTMLMediaElement} source - either https://developer.mozilla.org/en-US/docs/Web/API/MediaStream or https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement
- * @param {Object} [opts] options
- * @param {Number|null} [opts.bufferSize=null] https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
- * @param {Boolean} [opts.muteSource=false] - If true, the audio will not be sent back to the source
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
  *
- * // todo: add option for whether to keep or destroy the context
+ * @todo: add option for whether to keep or destroy the context
+ * @todo: test what happens if source has multiple channels
  *
  * @constructor
  */
-function MediaElementAudioStream(source, opts) {
+function MediaElementAudioStream(element, options) {
 
-  opts = defaults(opts, {
+  options = defaults(options, {
     // "It is recommended for authors to not specify this buffer size and allow the implementation to pick a good
     // buffer size to balance between latency and audio quality."
     // https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
@@ -6792,13 +6489,21 @@ function MediaElementAudioStream(source, opts) {
   // we shouldn't need any output channels (going back to the browser - that's what the gain node is for), but chrome is buggy and won't give us any audio without one
   var outputChannels = 1;
 
-  Readable.call(this, opts);
+  if (typeof element == 'string') {
+    element = document.querySelector(element);
+  }
+
+  if (!element) {
+    throw new Error('Watson Speech to Text MediaElementAudioStream: missing element');
+  }
+
+  Readable.call(this, options);
 
   var self = this;
   var recording = true;
 
   // I can't find much documentation for this for <audio> elements, but it seems to be required for cross-domain usage (in addition to CORS headers)
-  source.crossOrigin = opts.crossOrigin;
+  element.crossOrigin = options.crossOrigin;
 
   /**
    * Convert and emit the raw audio data
@@ -6809,19 +6514,19 @@ function MediaElementAudioStream(source, opts) {
     // onaudioprocess can be called at least once after we've stopped
     if (recording) {
       // todo: interleave channels in binary mode
-      self.push( opts.objectMode ? e.inputBuffer : new Buffer(e.inputBuffer.getChannelData(0)) );
+      self.push( options.objectMode ? e.inputBuffer : new Buffer(e.inputBuffer.getChannelData(0)) );
     }
   }
 
   var AudioContext = window.AudioContext || window.webkitAudioContext;
   // cache the source node & context since it's not possible to recreate it later
-  var context = source.context = source.context || new AudioContext();
-  var audioInput = source.node  = source.node || context.createMediaElementSource(source);
-  var scriptProcessor = context.createScriptProcessor(opts.bufferSize, inputChannels, outputChannels);
+  var context = element.context = element.context || new AudioContext();
+  var audioInput = element.node  = element.node || context.createMediaElementSource(element);
+  var scriptProcessor = context.createScriptProcessor(options.bufferSize, inputChannels, outputChannels);
 
   scriptProcessor.onaudioprocess = processAudio;
 
-  if (!opts.muteSource) {
+  if (!options.muteSource) {
     var gain = context.createGain();
     audioInput.connect(gain);
     gain.connect(context.destination);
@@ -6837,22 +6542,22 @@ function MediaElementAudioStream(source, opts) {
     audioInput.connect(scriptProcessor);
     // other half of workaround for chrome bugs
     scriptProcessor.connect(context.destination);
-    source.removeEventListener("playing", connect);
+    element.removeEventListener("playing", connect);
   }
-  source.addEventListener("playing", connect);
+  element.addEventListener("playing", connect);
 
   // https://developer.mozilla.org/en-US/docs/Web/Guide/Events/Media_events
   // https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/readyState
   function start() {
-    source.play();
-    source.removeEventListener("canplaythrough", start);
+    element.play();
+    element.removeEventListener("canplaythrough", start);
   }
-  if (opts.autoPlay) {
+  if (options.autoPlay) {
     // play immediately if we have enough data, otherwise wait for the canplaythrough event
-    if(source.readyState === source.HAVE_ENOUGH_DATA) {
-      source.play();
+    if(element.readyState === element.HAVE_ENOUGH_DATA) {
+      element.play();
     } else {
-      source.addEventListener("canplaythrough", start);
+      element.addEventListener("canplaythrough", start);
     }
   }
 
@@ -6864,14 +6569,14 @@ function MediaElementAudioStream(source, opts) {
     self.push(null);
     self.emit('close');
   }
-  source.addEventListener("ended", end);
+  element.addEventListener("ended", end);
 
   this.stop = function() {
-    source.pause();
+    element.pause();
     end();
   };
 
-  source.addEventListener("error", this.emit.bind(this, 'error'));
+  element.addEventListener("error", this.emit.bind(this, 'error'));
 
   process.nextTick(function() {
     // this is more useful for binary mode than object mode, but it won't hurt either way
@@ -6906,7 +6611,7 @@ MediaElementAudioStream.toRaw = function toFloat32(chunk) {
 module.exports = MediaElementAudioStream;
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":24,"buffer":4,"defaults":8,"stream":36,"util":40}],51:[function(require,module,exports){
+},{"_process":24,"buffer":4,"defaults":8,"stream":36,"util":40}],50:[function(require,module,exports){
 /**
  * Copyright 2015 IBM Corp. All Rights Reserved.
  *
@@ -6930,7 +6635,11 @@ var FilePlayer = require('./file-player.js');
 var FormatStream = require('./format-stream.js');
 var TimingStream = require('./timing-stream.js');
 var assign = require('object.assign/polyfill')();
+var WritableElementStream = require('./writable-element-stream');
 
+/**
+ * @module watson-speech/speech-to-text/recognize-blob
+ */
 
 /**
  * Create and return a RecognizeStream from a File or Blob
@@ -6942,12 +6651,18 @@ var assign = require('object.assign/polyfill')();
  * @param {Boolean} [options.play=false] - If a file is set, play it locally as it's being uploaded
  * @param {Boolena} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
  * @param {Boolena} [options.realtime=options.play] - pipe the text through a {TimingStream} which slows the output down to real-time to match the audio playback.
+ * @param {String|DOMElement} [options.outputElement] pipe the text to a WriteableElementStream targeting the specified element. Also defaults objectMode to true to enable interim results.
  *
  * @returns {RecognizeStream}
  */
 module.exports = function recognizeBlob(options) {
   if (!options || !options.token) {
     throw new Error("WatsonSpeechToText: missing required parameter: opts.token");
+  }
+
+  // the WritableElementStream works best in objectMode
+  if (options.outputElement && options.objectMode !== false) {
+    options.objectMode = true;
   }
 
   var realtime = options.realtime || typeof options.realtime === 'undefined' && options.play;
@@ -6974,8 +6689,12 @@ module.exports = function recognizeBlob(options) {
     FilePlayer.playFile(options.data).then(function (player) {
       recognizeStream.on('stop', player.stop.bind(player));
     }).catch(function (err) {
-      recognizeStream.emit('playback-error', err);
+      stream.emit('playback-error', err);
     });
+  }
+
+  if (options.outputElement) {
+    stream.pipe(new WritableElementStream(options))
   }
 
   return stream;
@@ -6983,7 +6702,7 @@ module.exports = function recognizeBlob(options) {
 
 
 
-},{"./file-player.js":46,"./format-stream.js":47,"./recognize-stream.js":54,"./timing-stream.js":55,"object.assign/polyfill":21,"readable-blob-stream":25}],52:[function(require,module,exports){
+},{"./file-player.js":45,"./format-stream.js":46,"./recognize-stream.js":53,"./timing-stream.js":54,"./writable-element-stream":57,"object.assign/polyfill":21,"readable-blob-stream":25}],51:[function(require,module,exports){
 /**
  * Copyright 2015 IBM Corp. All Rights Reserved.
  *
@@ -7006,6 +6725,11 @@ var L16 = require('./webaudio-l16-stream');
 var RecognizeStream = require('./recognize-stream.js');
 var FormatStream = require('./format-stream.js');
 var assign = require('object.assign/polyfill')();
+var WritableElementStream = require('./writable-element-stream');
+
+/**
+ * @module watson-speech/speech-to-text/recognize-element
+ */
 
 /**
  * Recognize audio from a <audio> or <video> element
@@ -7014,6 +6738,7 @@ var assign = require('object.assign/polyfill')();
  * @param {String} options.token - Auth Token - see https://github.com/watson-developer-cloud/node-sdk#authorization
  * @param {MediaElement} options.element - the <video> or <audio> element to play
  * @param {Boolena} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
+ * @param {String|DOMElement} [options.outputElement] pipe the text to a WriteableElementStream targeting the specified element. Also defaults objectMode to true to enable interim results.
  *
  * @returns {RecognizeStream}
  */
@@ -7021,6 +6746,12 @@ module.exports = function recognizeElement(options) {
   if (!options || !options.token) {
     throw new Error("WatsonSpeechToText: missing required parameter: opts.token");
   }
+
+  // the WritableElementStream works best in objectMode
+  if (options.outputElement && options.objectMode !== false) {
+    options.objectMode = true;
+  }
+
 
   // we don't want the readable stream to have objectMode on the input even if we're setting it for the output
   var rsOpts = assign({}, options);
@@ -7048,10 +6779,14 @@ module.exports = function recognizeElement(options) {
 
   recognizeStream.on('stop', sourceStream.stop.bind(sourceStream));
 
+  if (options.outputElement) {
+    stream.pipe(new WritableElementStream(options))
+  }
+
   return stream;
 };
 
-},{"./format-stream.js":47,"./media-element-audio-stream":50,"./recognize-stream.js":54,"./webaudio-l16-stream":57,"object.assign/polyfill":21}],53:[function(require,module,exports){
+},{"./format-stream.js":46,"./media-element-audio-stream":49,"./recognize-stream.js":53,"./webaudio-l16-stream":56,"./writable-element-stream":57,"object.assign/polyfill":21}],52:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7077,6 +6812,11 @@ var RecognizeStream = require('./recognize-stream.js');
 var L16 = require('./webaudio-l16-stream.js');
 var FormatStream = require('./format-stream.js');
 var assign = require('object.assign/polyfill')();
+var WritableElementStream = require('./writable-element-stream');
+
+/**
+ * @module watson-speech/speech-to-text/recognize-microphone
+ */
 
 /**
  * Create and return a RecognizeStream from the user's microphone
@@ -7084,13 +6824,19 @@ var assign = require('object.assign/polyfill')();
  *
  * @param {Object} options - Also passed to {MediaElementAudioStream} and to {RecognizeStream}
  * @param {String} options.token - Auth Token - see https://github.com/watson-developer-cloud/node-sdk#authorization
- * @param {Boolena} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
+ * @param {Boolean} [options.format=true] - pipe the text through a {FormatStream} which performs light formatting
+ * @param {String|DOMElement} [options.outputElement] pipe the text to a WriteableElementStream targeting the specified element. Also defaults objectMode to true to enable interim results.
  *
  * @returns {RecognizeStream}
  */
 module.exports = function recognizeMicrophone(options) {
   if (!options || !options.token) {
     throw new Error("WatsonSpeechToText: missing required parameter: opts.token");
+  }
+
+  // the WritableElementStream works best in objectMode
+  if (options.outputElement && options.objectMode !== false) {
+    options.objectMode = true;
   }
 
   // we don't want the readable stream to have objectMode on the input even if we're setting it for the output
@@ -7121,12 +6867,16 @@ module.exports = function recognizeMicrophone(options) {
     stream.stop = recognizeStream.stop.bind(recognizeStream);
   }
 
+  if (options.outputElement) {
+    stream.pipe(new WritableElementStream(options))
+  }
+
   return stream;
 };
 
 
 
-},{"./format-stream.js":47,"./getusermedia":48,"./recognize-stream.js":54,"./webaudio-l16-stream.js":57,"microphone-stream":16,"object.assign/polyfill":21}],54:[function(require,module,exports){
+},{"./format-stream.js":46,"./getusermedia":47,"./recognize-stream.js":53,"./webaudio-l16-stream.js":56,"./writable-element-stream":57,"microphone-stream":16,"object.assign/polyfill":21}],53:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014 IBM Corp. All Rights Reserved.
@@ -7154,7 +6904,6 @@ var W3CWebSocket = require('websocket').w3cwebsocket;
 var contentType = require('./content-type');
 var defaults = require('defaults');
 var qs = require('../util/querystring.js');
-
 
 var OPENING_MESSAGE_PARAMS_ALLOWED = ['continuous', 'max_alternatives', 'timestamps', 'word_confidence', 'inactivity_timeout',
   'content-type', 'interim_results', 'keywords', 'keywords_threshold', 'word_alternatives_threshold'];
@@ -7470,7 +7219,7 @@ RecognizeStream.getContentType = function (buffer) {
 module.exports = RecognizeStream;
 
 }).call(this,require('_process'))
-},{"../util/querystring.js":61,"./content-type":45,"./to-promise":56,"_process":24,"defaults":8,"object.pick":22,"stream":36,"util":40,"websocket":41}],55:[function(require,module,exports){
+},{"../util/querystring.js":61,"./content-type":44,"./to-promise":55,"_process":24,"defaults":8,"object.pick":22,"stream":36,"util":40,"websocket":41}],54:[function(require,module,exports){
 (function (Buffer){
 'use strict';
 
@@ -7697,7 +7446,7 @@ TimingStream.prototype.handleResult = function handleResult(result) {
 module.exports = TimingStream;
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":4,"clone":6,"defaults":8,"stream":36,"util":40}],56:[function(require,module,exports){
+},{"buffer":4,"clone":6,"defaults":8,"stream":36,"util":40}],55:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7719,7 +7468,7 @@ module.exports = function promise(stream) {
   });
 };
 
-},{}],57:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 (function (process,Buffer){
 'use strict';
 var Transform = require('stream').Transform;
@@ -7907,10 +7656,99 @@ module.exports = WebAudioL16Stream;
 
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"_process":24,"buffer":4,"defaults":8,"stream":36,"util":40}],58:[function(require,module,exports){
-"use strict";
-require('whatwg-fetch'); // pollyfill - most supported browsers have this built-in
+},{"_process":24,"buffer":4,"defaults":8,"stream":36,"util":40}],57:[function(require,module,exports){
+'use strict';
 
+var Writable = require('stream').Writable;
+var util = require('util');
+var defaults = require('defaults');
+
+/**
+ * Writable stream that accepts results in either object or string mode and outputs the text to a supplied html element
+ *
+ * Can show interim results when in objectMode
+ *
+ * @todo: consider automatically setting the value attribute on <input> elements
+ *
+ * @param options
+ * @param {String|DOMElement} options.outputElement
+ * @param {Boolean} [options.clear=true] delete any previous text
+ * @constructor
+ */
+function WritableElementStream(options) {
+  this.options = options = defaults(options, {
+    decodeStrings: false,  // false = don't convert strings to buffers before passing to _write (only applies in string mode)
+    clear: true
+  });
+
+  this.el = typeof options.outputElement === 'string' ?  document.querySelector(options.outputElement) : options.outputElement;
+
+  if (!this.el) {
+    throw new Error('Watson Speech to Text WriteableElementStream: missing outputElement');
+  }
+
+  Writable.call(this, options);
+
+  if (options.clear) {
+    this.el.textContent = '';
+  }
+
+  if (options.objectMode) {
+    this.finalizedText = this.el.textContent;
+    this._write = this.writeObject;
+  } else {
+    this._write = this.writeString;
+  }
+}
+util.inherits(WritableElementStream, Writable);
+
+
+WritableElementStream.prototype.writeString = function writeString(text, encoding, next) {
+  this.el.textContent += text;
+  next();
+};
+
+WritableElementStream.prototype.writeObject = function writeObject(result, encoding, next) {
+  if (result.final) {
+    this.finalizedText += result.alternatives[0].transcript;
+    this.el.textContent = this.finalizedText;
+  } else {
+    this.el.textContent = this.finalizedText + result.alternatives[0].transcript
+  }
+  next();
+};
+
+module.exports = WritableElementStream;
+
+},{"defaults":8,"stream":36,"util":40}],58:[function(require,module,exports){
+"use strict";
+
+/**
+ * @module watson-speech/text-to-speech/get-voices
+ */
+
+/**
+ Returns a promise that resolves to an array of objects representing the available voices.  Example:
+
+ ```js
+ [{
+    "name": "en-US_MichaelVoice",
+    "language": "en-US",
+    "customizable": true,
+    "gender": "male",
+    "url": "https://stream.watsonplatform.net/text-to-speech/api/v1/voices/en-US_MichaelVoice",
+    "description": "Michael: American English male voice."
+ },
+ //...
+ ]
+ ```
+ Requires fetch (loading the top-level module automatically includes a pollyfill, but loading this sub-module directly doesn't.)
+
+ * @todo define format in @returns statement
+ * @param options
+ * @param {String} options.token auth token
+ * @returns {Promise.<T>}
+ */
 module.exports = function getVoices(options) {
   if (!options || !options.token) {
     throw new Error("Watson TextToSpeech: missing required parameter: options.token");
@@ -7929,11 +7767,22 @@ module.exports = function getVoices(options) {
     });
 };
 
-},{"whatwg-fetch":44}],59:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 "use strict";
 
+/**
+ * @module watson-speech/text-to-speech
+ */
+
+/**
+ * @see module:watson-speech/text-to-speech/synthesize
+ */
 exports.synthesize = require('./synthesize');
 
+
+/**
+ * @see module:watson-speech/text-to-speech/get-voices
+ */
 exports.getVoices = require('./get-voices');
 
 },{"./get-voices":58,"./synthesize":60}],60:[function(require,module,exports){
@@ -7941,15 +7790,21 @@ exports.getVoices = require('./get-voices');
 var qs = require('../util/querystring.js');
 
 /**
- * voice=en-US_AllisonVoice
- text=Conscious%20of%20its%20spiritual%20and%20moral%20heritage%2C%20the%20Union%20is%20founded%20on%20the%20indivisible%2C%20universal%20values%20of%20human%20dignity%2C%20freedom%2C%20equality%20and%20solidarity%3B%20it%20is%20based%20on%20the%20principles%20of%20democracy%20and%20the%20rule%20of%20law.%20It%20places%20the%20individual%20at%20the%20heart%20of%20its%20activities%2C%20by%20establishing%20the%20citizenship%20of%20the%20Union%20and%20by%20creating%20an%20area%20of%20freedom%2C%20security%20and%20justice.
- =0
+ * @module watson-speech/text-to-speech/synthesize
+ */
+
+/**
+ * Synthesize and play the supplied text over the computers speakers.
+ *
+ * Creates and returns a HTML5 `<audio>` element
+ *
  * @param options
- * @param options.token auth token
- * @param options.text text ty speak
- * @param [options.voice=en-US_MichaelVoice] what voice to use - call TextToSpeech.getVoices() for a complete list.
- * @param [options.X-WDC-PL-OPT-OUT=0] set to 1 to opt-out of allowing Watson to use this request to improve it's services
+ * @param {String} options.token auth token
+ * @param {String} options.text text to speak
+ * @param {String} [options.voice=en-US_MichaelVoice] what voice to use - call getVoices() for a complete list.
+ * @param {Number} [options.X-WDC-PL-OPT-OUT=0] set to 1 to opt-out of allowing Watson to use this request to improve it's services
  * @returns {Audio}
+ * @see module:watson-speech/text-to-speech/get-voices
  */
 module.exports = function synthesize(options) {
   if (!options || !options.token) {
