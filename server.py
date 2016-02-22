@@ -10,8 +10,6 @@ from watson_developer_cloud import AuthorizationV1 as WatsonAuthorization
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 
-
-
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 has_arduino = False
 if len(sys.argv) > 1 and sys.argv[1] == 'arduino':
@@ -32,8 +30,8 @@ if has_arduino:
 
 alchemy = AlchemyLanguage(api_key=os.environ.get("ALCHEMY_API_KEY"))
 # client  = MongoClient(os.environ.get("MONGODB_URI"))
-app     = Flask(__name__, static_url_path="/static", static_folder="static")
-auth    = WatsonAuthorization(
+app = Flask(__name__, static_url_path="/static", static_folder="static")
+auth = WatsonAuthorization(
     username=os.environ.get("BLUEMIX_USERNAME"),
     password=os.environ.get("BLUEMIX_PASSWORD")
 )
