@@ -1,58 +1,59 @@
 var state                   = 'loading'
 var model                   = 'en-US_BroadbandModel'
 var sttToken                = null
-var $button                 = document.getElementById('action')
+var $recordButton           = document.getElementById('record')
+var $stopButton             = document.getElementById('stop')
 var $results                = document.getElementById('results')
 var sttStream               = null
-var defaultButtonClassName  = 'h3 btn btn-primary mb4'
-var defaultResultsClassName = ''
 
-$button.addEventListener('click', function() {
-  switch(state) {
-    case 'ready':
-      state               = 'recording'
-      $button.textContent = 'Recording...'
-      $results.className  = ''
-      sttStream = WatsonSpeech.SpeechToText
-        .recognizeMicrophone({
-          token: sttToken,
-          model: model,
-          objectMode: true,
-          outputElement: '#results',
-        })
+$recordButton.addEventListener('click', listen)
+$stopButton.addEventListener('click', stop)
 
-      break
+function listen() {
+  if(!sttStream) {
+    sttStream = WatsonSpeech.SpeechToText.recognizeMicrophone({
+      token: sttToken,
+      model: model,
+      objectMode: true,
+    })
 
-    case 'recording':
-      try {
-        sttStream.stop()
-      } catch(e) {
-
-      }
-
-      state               = 'analysing'
-      $button.disable     = true
-      $button.textContent = 'Sentiment Analysing...'
-      sentimentAnalysis($results.textContent)
-      break
+    sttStream.on('data', onData)
   }
-})
+
+
+  $recordButton.disabled  = true
+  $stopButton.disabled    = false
+}
+
+function stop() {
+  $recordButton.disabled  = true
+  $stopButton.disabled    = true
+
+  if(sttStream) {
+    sttStream.stop()
+    sttStream = null
+  }
+
+  sentimentAnalysis($results.textContent)
+}
+
+function onData(data) {
+  $results.textContent = arguments[0].alternatives[0].transcript
+}
 
 function sentimentAnalysis(transcript) {
   var xhr = new XMLHttpRequest()
 
   xhr.addEventListener('load', function(evt) {
-    state               = 'ready'
-    sentiment           = JSON.parse(evt.target.responseText).sentiment
+    sentiment = JSON.parse(evt.target.responseText).sentiment
 
     if(sentiment === 'positive') {
-      $results.className = 'green'
+      reset('green')
     } else if(sentiment === 'negative') {
-      $results.className = 'red'
+      reset('red')
+    } else {
+      reset()
     }
-
-    $button.disabled    = false
-    $button.textContent = 'Click to record'
   })
 
   var formData = new FormData()
@@ -62,19 +63,24 @@ function sentimentAnalysis(transcript) {
   xhr.send(formData)
 }
 
-function init() {
+function reset(backgroundColor) {
+  state = 'ready'
+  document.body.style.background = backgroundColor || 'none'
+  $results.textContent = ''
+  $recordButton.disabled  = false
+  $stopButton.disabled    = true
+}
+
+function getToken() {
   var xhr = new XMLHttpRequest()
 
   xhr.addEventListener('load', function(evt) {
-    state               = 'ready'
-    sttToken            = evt.target.responseText
-    $button.disabled    = false
-    $button.textContent = 'Click to record'
-    $results.className  = ''
+    sttToken = evt.target.responseText
+    reset()
   })
 
   xhr.open('GET', '/token')
   xhr.send()
 }
 
-init()
+getToken()
