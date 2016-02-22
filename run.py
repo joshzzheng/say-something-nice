@@ -45,10 +45,7 @@ def get_text_sentiment(text):
         return 'netural', 0
     return result['docSentiment']['type'], result['docSentiment']['score']
 
-if __name__ == '__main__':
-    dotenv_path = join(dirname(__file__), '.env')
-    load_dotenv(dotenv_path)
-
+def main():
     has_arduino = False
     if len(sys.argv) > 1 and sys.argv[1] == 'arduino':
         has_arduino = True
@@ -80,7 +77,7 @@ if __name__ == '__main__':
     print(sentiment, score)
 
     logger.info(text + " - " + sentiment + " - " + str(score))
-    
+
     if "watson" in text or "Watson" in text:
         if has_arduino:
             if score != 0:
@@ -92,3 +89,12 @@ if __name__ == '__main__':
                 ser.flush()
                 ser.close()
 
+if __name__ == '__main__':
+    dotenv_path = join(dirname(__file__), '.env')
+    load_dotenv(dotenv_path)
+
+    try:
+        main()
+    except:
+        print("IOError detected, restarting...")
+        main()
