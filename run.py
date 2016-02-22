@@ -5,8 +5,6 @@ from os.path import join, dirname
 from dotenv import load_dotenv
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
-
-import time
 import serial
 
 from say_something_nice.recorder import Recorder

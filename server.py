@@ -1,5 +1,7 @@
 import os
 import json
+import serial
+import sys
 from dotenv import load_dotenv
 from flask import Flask
 from flask import request
@@ -8,8 +10,24 @@ from watson_developer_cloud import AuthorizationV1 as WatsonAuthorization
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+has_arduino = False
+if len(sys.argv) > 1 and sys.argv[1] == 'arduino':
+    has_arduino = True
+
+if has_arduino:
+    # configure the serial connections (the parameters differs on the device you are connecting to)
+    ser = serial.Serial(
+        port='/dev/tty.usbmodem1421',
+        baudrate=9600,
+        parity=serial.PARITY_ODD,
+        stopbits=serial.STOPBITS_TWO,
+        bytesize=serial.SEVENBITS
+    )
+    ser.isOpen()
+    ser.flush()
 
 
 alchemy = AlchemyLanguage(api_key=os.environ.get("ALCHEMY_API_KEY"))
@@ -30,18 +48,32 @@ def getToken():
 
 @app.route("/sentiment", methods=["POST"])
 def getSentiment():
-    result      = alchemy.sentiment(text=request.form["transcript"])
+    global has_arduino
+    result = alchemy.sentiment(text=request.form["transcript"])
     # # dump(result["docSentiment"])
     # return json.dumps(result)
-    sentiment   = result["docSentiment"]["type"]
+    sentiment = result["docSentiment"]["type"]
 
     if sentiment == "neutral":
         score = 0
     else:
         score = result["docSentiment"]["score"]
+        if "watson" in request.form['transcript'] or "Watson" in request.form['transcript']:
+            if has_arduino:
+                if score != 0:
+                    if float(score) > 0.4:
+                        ser.write('p')
+                    else:
+                        ser.write('n')
+                    ser.flush()
 
     return json.dumps({"sentiment": sentiment, "score": score})
 
-
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+
+
+
+
