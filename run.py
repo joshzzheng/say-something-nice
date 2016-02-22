@@ -6,6 +6,23 @@ from dotenv import load_dotenv
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 import serial
+import logging
+
+logger = logging.getLogger('candy_logger')
+logger.setLevel(logging.DEBUG)
+
+fh = logging.FileHandler('candy.log')
+fh.setLevel(logging.INFO)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+fh.setFormatter(formatter)
+
+logger.addHandler(ch)
+logger.addHandler(fh)
 
 from say_something_nice.recorder import Recorder
 
@@ -62,6 +79,8 @@ if __name__ == '__main__':
     sentiment, score = get_text_sentiment(text)
     print(sentiment, score)
 
+    logger.info(text + " - " + sentiment + " - " + str(score))
+    
     if "watson" in text or "Watson" in text:
         if has_arduino:
             if score != 0:

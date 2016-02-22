@@ -10,6 +10,25 @@ from watson_developer_cloud import AuthorizationV1 as WatsonAuthorization
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
 
+import logging
+
+logger = logging.getLogger('candy_logger')
+logger.setLevel(logging.DEBUG)
+
+fh = logging.FileHandler('candy.log')
+fh.setLevel(logging.INFO)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+fh.setFormatter(formatter)
+
+logger.addHandler(ch)
+logger.addHandler(fh)
+
+
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 has_arduino = False
 if len(sys.argv) > 1 and sys.argv[1] == 'arduino':
@@ -47,7 +66,8 @@ def getToken():
 @app.route("/sentiment", methods=["POST"])
 def getSentiment():
     global has_arduino
-    result = alchemy.sentiment(text=request.form["transcript"])
+    text = request.form["transcript"]
+    result = alchemy.sentiment(text=text)
     # # dump(result["docSentiment"])
     # return json.dumps(result)
     sentiment = result["docSentiment"]["type"]
@@ -56,7 +76,7 @@ def getSentiment():
         score = 0
     else:
         score = result["docSentiment"]["score"]
-        if "watson" in request.form['transcript'] or "Watson" in request.form['transcript']:
+        if "watson" in text or "Watson" in text:
             if has_arduino:
                 if score != 0:
                     if float(score) > 0.4:
@@ -65,6 +85,7 @@ def getSentiment():
                         ser.write('n')
                     ser.flush()
 
+    logger.info(text + " - " + sentiment + " - " + str(score))
     return json.dumps({"sentiment": sentiment, "score": score})
 
 if __name__ == "__main__":
