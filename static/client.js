@@ -5,11 +5,15 @@ var $recordButton           = document.getElementById('record')
 var $stopButton             = document.getElementById('stop')
 var $results                = document.getElementById('results')
 var sttStream               = null
+var isStopped               = false
+var timeout                 = null
 
 $recordButton.addEventListener('click', listen)
 $stopButton.addEventListener('click', stop)
 
 function listen() {
+  clearTimeout(timeout)
+
   if(!sttStream) {
     sttStream = WatsonSpeech.SpeechToText.recognizeMicrophone({
       token: sttToken,
@@ -34,26 +38,35 @@ function stop() {
     sttStream = null
   }
 
+  isStopped = true
   sentimentAnalysis($results.textContent)
 }
 
 function onData(data) {
-  $results.textContent = arguments[0].alternatives[0].transcript
+  if(!isStopped) {
+    $results.textContent = arguments[0].alternatives[0].transcript
+  }
 }
 
 function sentimentAnalysis(transcript) {
+  if(!transcript) {
+    return reset()
+  }
+
   var xhr = new XMLHttpRequest()
 
   xhr.addEventListener('load', function(evt) {
     sentiment = JSON.parse(evt.target.responseText).sentiment
 
     if(sentiment === 'positive') {
-      reset('green')
+      reset('rgba(164,198,57,0.25)', true)
     } else if(sentiment === 'negative') {
-      reset('red')
+      reset('rgba(255,76,76,0.25)', true)
     } else {
-      reset()
+      reset('', true)
     }
+
+    timeout = setTimeout(reset, 3000)
   })
 
   var formData = new FormData()
@@ -63,12 +76,16 @@ function sentimentAnalysis(transcript) {
   xhr.send(formData)
 }
 
-function reset(backgroundColor) {
+function reset(backgroundColor, keepText) {
   state = 'ready'
+  isStopped = false
   document.body.style.background = backgroundColor || 'none'
-  $results.textContent = ''
   $recordButton.disabled  = false
   $stopButton.disabled    = true
+
+  if(!keepText) {
+    $results.textContent = ''
+  }
 }
 
 function getToken() {
