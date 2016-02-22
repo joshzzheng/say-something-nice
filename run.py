@@ -43,7 +43,7 @@ if __name__ == '__main__':
     if has_arduino:
         # configure the serial connections (the parameters differs on the device you are connecting to)
         ser = serial.Serial(
-            port='/dev/tty.usbmodem1411',
+            port='/dev/tty.usbmodem1421',
             baudrate=9600,
             parity=serial.PARITY_ODD,
             stopbits=serial.STOPBITS_TWO,
@@ -64,12 +64,14 @@ if __name__ == '__main__':
     sentiment, score = get_text_sentiment(text)
     print(sentiment, score)
 
-    if has_arduino:
-        if float(score) > 0.4:
-            ser.write('p')
-        else:
-            ser.write('n')
+    if "watson" in text or "Watson" in text:
+        if has_arduino:
+            if score != 0:
+                if float(score) > 0.4:
+                    ser.write('p')
+                else:
+                    ser.write('n')
 
-        ser.flush()
-        ser.close()
+                ser.flush()
+                ser.close()
 
