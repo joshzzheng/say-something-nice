@@ -1,0 +1,29 @@
+{
+  "name": "say-something-nice",
+  "version": "1.0.0",
+  "description": "",
+  "main": "client/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boxcarton/say-something-nice.git"
+  },
+  "keywords": [
+    "candy",
+    "ibm",
+    "watson",
+    "arduino"
+  ],
+  "author": "Yacine Rezgui <rezgui.y@gmail.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/boxcarton/say-something-nice/issues"
+  },
+  "homepage": "https://github.com/boxcarton/say-something-nice#readme",
+  "dependencies": {
+    "basscss": "^7.1.1",
+    "watson-speech": "^0.10.1"
+  }
+}
