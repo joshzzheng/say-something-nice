@@ -2,6 +2,7 @@ import os
 import json
 import serial
 import sys
+import logging
 from dotenv import load_dotenv
 from flask import Flask
 from flask import request
@@ -9,8 +10,6 @@ from pymongo import MongoClient
 from watson_developer_cloud import AuthorizationV1 as WatsonAuthorization
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
-
-import logging
 
 logger = logging.getLogger('candy_logger')
 logger.setLevel(logging.DEBUG)
@@ -68,22 +67,19 @@ def getSentiment():
     global has_arduino
     text = request.form["transcript"]
     result = alchemy.sentiment(text=text)
-    # # dump(result["docSentiment"])
-    # return json.dumps(result)
     sentiment = result["docSentiment"]["type"]
 
     if sentiment == "neutral":
         score = 0
     else:
         score = result["docSentiment"]["score"]
-        if "watson" in text or "Watson" in text:
-            if has_arduino:
-                if score != 0:
-                    if float(score) > 0.4:
-                        ser.write('p')
-                    else:
-                        ser.write('n')
-                    ser.flush()
+        if has_arduino:
+            if score != 0:
+                if float(score) > 0.4:
+                    ser.write('p')
+                else:
+                    ser.write('n')
+                ser.flush()
 
     logger.info(text + " - " + sentiment + " - " + str(score))
     return json.dumps({"sentiment": sentiment, "score": score})

@@ -1,12 +1,12 @@
 import os
 import json
 import sys
+import serial
+import logging
 from os.path import join, dirname
 from dotenv import load_dotenv
 from watson_developer_cloud import SpeechToTextV1 as SpeechToText
 from watson_developer_cloud import AlchemyLanguageV1 as AlchemyLanguage
-import serial
-import logging
 
 logger = logging.getLogger('candy_logger')
 logger.setLevel(logging.DEBUG)
