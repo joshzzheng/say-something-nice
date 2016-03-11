@@ -27,14 +27,20 @@ fh.setFormatter(formatter)
 logger.addHandler(ch)
 logger.addHandler(fh)
 
-
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-has_arduino = False
+alchemy = AlchemyLanguage(api_key=os.environ.get("ALCHEMY_API_KEY"))
+auth = WatsonAuthorization(
+    username=os.environ.get("BLUEMIX_USERNAME"),
+    password=os.environ.get("BLUEMIX_PASSWORD")
+)
+
+has_arduino = False # Stays False if "python server.py"
 if len(sys.argv) > 1 and sys.argv[1] == 'arduino':
-    has_arduino = True
+    has_arduino = True # True if user runs "python server.py arduino"
 
 if has_arduino:
-    # configure the serial connections (the parameters differs on the device you are connecting to)
+    # configure the serial connections 
+    # (Parameters differ depending on the device being connected)
     ser = serial.Serial(
         port='/dev/tty.usbmodem1421',
         baudrate=9600,
@@ -45,14 +51,7 @@ if has_arduino:
     ser.isOpen()
     ser.flush()
 
-
-alchemy = AlchemyLanguage(api_key=os.environ.get("ALCHEMY_API_KEY"))
-# client  = MongoClient(os.environ.get("MONGODB_URI"))
 app = Flask(__name__, static_url_path="/static", static_folder="static")
-auth = WatsonAuthorization(
-    username=os.environ.get("BLUEMIX_USERNAME"),
-    password=os.environ.get("BLUEMIX_PASSWORD")
-)
 
 @app.route("/")
 def index():
@@ -86,9 +85,3 @@ def getSentiment():
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
-
-
-
