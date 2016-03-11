@@ -74,7 +74,7 @@ def getSentiment():
         score = result["docSentiment"]["score"]
         if has_arduino:
             if score != 0:
-                if float(score) > 0.4:
+                if float(score) > 0:
                     ser.write('p')
                 else:
                     ser.write('n')
