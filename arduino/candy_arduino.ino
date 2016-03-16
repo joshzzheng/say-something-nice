@@ -33,25 +33,23 @@ void setup() {
 
 void loop() {
   String data;
-  if (Serial.available()) 
-  {
-      // read all the available characters
-      while (Serial.available() > 0) 
-      {
-          data = Serial.readString();
-          data = data[0];
-          // display each character to the LCD
-          if (data == "p") {
-            Serial.println(data);
-            motor1->run(FORWARD);
-            delay(500);
-            motor1->run(RELEASE);
-          } else {
-            Serial.println(data);
-            motor2->run(FORWARD);
-            delay(500);
-            motor2->run(RELEASE);
-          }
+  if (Serial.available()) {
+    // read all the available characters
+    while (Serial.available() > 0) {
+      data = Serial.readString();
+      data = data[0];
+      // display each character to the LCD
+      if (data == "p") {
+        Serial.println(data);
+        motor1->run(FORWARD);
+        delay(500);
+        motor1->run(RELEASE);
+      } else {
+        Serial.println(data);
+        motor2->run(FORWARD);
+        delay(500);
+        motor2->run(RELEASE);
       }
+    }
   }
 }
