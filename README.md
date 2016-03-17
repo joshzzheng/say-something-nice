@@ -1,6 +1,6 @@
 # Say Something Nice
 
-![Home Page](http://imgur.com/1hPcd1O)
+![Screenshot](http://i.imgur.com/1hPcd1O.png)
 
 ## Introduction
 This the software used for in the *Watson Polite Candy Machine*.  Here is the [complete tutorial on Medium] on how to put build the entire candy machine.
@@ -16,7 +16,7 @@ You do, however, need to create your own .env file since  I use [python-dotenv](
 
 #### .env
 `BLUEMIX_USERNAME=*your bluemix credential*`   
-`BLUEMIX_PASSWORD=*your bluemix credential*`
+`BLUEMIX_PASSWORD=*your bluemix credential*`   
 `ALCHEMY_API_KEY=*your alchemy api key*`
 
 
