@@ -15,9 +15,9 @@ There's no installation required.  Simply clone the repository to run the server
 You do, however, need to create your own .env file since  I use [python-dotenv](https://github.com/theskumar/python-dotenv) to manage my credentials. You .env file should look like this.
 
 #### .env
-`BLUEMIX_USERNAME=*your bluemix credential*`   
-`BLUEMIX_PASSWORD=*your bluemix credential*`   
-`ALCHEMY_API_KEY=*your alchemy api key*`
+`BLUEMIX_USERNAME=<your bluemix credential>`   
+`BLUEMIX_PASSWORD=<your bluemix credential>`   
+`ALCHEMY_API_KEY=<your alchemy api key>`
 
 
 ## To Run
