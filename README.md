@@ -27,5 +27,4 @@ You do, however, need to create your own .env file since  I use [python-dotenv](
 
 
 ## License
->You can check out the full license [here](https://opensource.org/licenses/MIT)
-This project is licensed under the terms of the **MIT** license.
+This project is licensed under the terms of the **MIT** license. You can check out the full license [here](https://opensource.org/licenses/MIT).
