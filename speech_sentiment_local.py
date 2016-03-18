@@ -27,8 +27,8 @@ logger.addHandler(fh)
 from say_something_nice.recorder import Recorder
 
 def transcribe_audio(path_to_audio_file):
-    username = os.environ.get("BLUEMIX_USERNAME")
-    password = os.environ.get("BLUEMIX_PASSWORD")
+    username = os.environ.get("STT_USERNAME")
+    password = os.environ.get("STT_PASSWORD")
     speech_to_text = SpeechToText(username=username,
                                   password=password)
 

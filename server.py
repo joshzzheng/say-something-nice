@@ -30,8 +30,8 @@ logger.addHandler(fh)
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 alchemy = AlchemyLanguage(api_key=os.environ.get("ALCHEMY_API_KEY"))
 auth = WatsonAuthorization(
-    username=os.environ.get("BLUEMIX_USERNAME"),
-    password=os.environ.get("BLUEMIX_PASSWORD")
+    username=os.environ.get("STT_USERNAME"),
+    password=os.environ.get("STT_PASSWORD")
 )
 
 has_arduino = False # Stays False if "python server.py"
