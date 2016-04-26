@@ -3,6 +3,7 @@ import json
 import serial
 import sys
 import logging
+import glob
 from dotenv import load_dotenv
 from flask import Flask
 from flask import request
@@ -42,7 +43,7 @@ if has_arduino:
     # configure the serial connections 
     # (Parameters differ depending on the device being connected)
     ser = serial.Serial(
-        port='/dev/tty.usbmodem1421',
+        port=glob.glob("/dev/tty.usbmodem*")[0],
         baudrate=9600,
         parity=serial.PARITY_ODD,
         stopbits=serial.STOPBITS_TWO,
